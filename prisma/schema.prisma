@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,4 +8,461 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// User management
+model User {
+  id                String              @id
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  email             String              @unique
+  // Using the Supabase Auth user ID as our primary ID
+  isEmailVerified   Boolean             @default(false)
+  firstName         String?
+  lastName          String?
+  avatarUrl         String?
+  role              UserRole            @default(SALES_REP)
+  isActive          Boolean             @default(true)
+  lastLogin         DateTime?
+
+  // Relationships
+  profile           UserProfile?
+  transcripts       Transcript[]
+  ownedTeams        Team[]              @relation("TeamOwner")
+  memberOfTeams     TeamMember[]
+  managedTeams      TeamManager[]
+  stripeCustomerId  String?             @unique
+  subscription      Subscription?
+  integrations      UserIntegration[]
+  supportTickets    SupportTicket[]
+  usageStats        UsageStat[]
+  sessions          Session[]
+  insights          Insight[]
+  reports           Report[]
+
+  @@index([email])
+}
+
+enum UserRole {
+  SALES_REP
+  SALES_MANAGER
+  SALES_COACH
+  ADMIN
+}
+
+model UserProfile {
+  id                String      @id @default(uuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Settings and preferences
+  timezone          String      @default("UTC")
+  language          String      @default("en")
+  notificationPrefs Json        @default("{}")
+  dashboardLayout   Json?       // Stores user's custom dashboard layout
+  
+  // Job information
+  jobTitle          String?
+  company           String?
+  industry          String?
+  
+  // Relations
+  userId            String      @unique
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Session management for security
+model Session {
+  id                String      @id @default(uuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  expiresAt         DateTime
+  ipAddress         String?
+  userAgent         String?
+  
+  // Relations
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+// Teams management
+model Team {
+  id                String          @id @default(uuid())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  name              String
+  description       String?
+  avatarUrl         String?
+  isActive          Boolean         @default(true)
+  
+  // Relations
+  ownerId           String
+  owner             User            @relation("TeamOwner", fields: [ownerId], references: [id])
+  members           TeamMember[]
+  managers          TeamManager[]
+  transcripts       Transcript[]
+  reports           Report[]
+  insights          Insight[]
+  
+  @@index([ownerId])
+}
+
+model TeamMember {
+  id                String      @id @default(uuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  status            String      @default("ACTIVE") // ACTIVE, PENDING, INACTIVE
+  
+  // Relations
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId            String
+  team              Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, teamId])
+  @@index([userId])
+  @@index([teamId])
+}
+
+model TeamManager {
+  id                String      @id @default(uuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  
+  // Relations
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId            String
+  team              Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, teamId])
+  @@index([userId])
+  @@index([teamId])
+}
+
+// Transcript handling
+model Transcript {
+  id                String              @id @default(uuid())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  title             String
+  description       String?
+  callDate          DateTime
+  duration          Int?                // Call duration in seconds
+  recordingUrl      String?             // URL to the original recording if available
+  fileUrl           String              // Supabase storage URL for transcript file
+  fileName          String
+  fileSize          Int                 // File size in bytes
+  fileType          String              // MIME type or file extension
+  status            TranscriptStatus    @default(UPLOADED)
+  processingError   String?             // Stores error message if processing fails
+  
+  // Metadata and analytics
+  metadata          Json                @default("{}")
+  rawContent        String?             @db.Text  // Original transcript text
+  processedContent  String?             @db.Text  // Processed/structured transcript
+  
+  // Relations
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamId            String?
+  team              Team?               @relation(fields: [teamId], references: [id])
+  analyses          Analysis[]
+  insights          Insight[]
+  
+  @@index([userId])
+  @@index([teamId])
+  @@index([status])
+  @@index([callDate])
+}
+
+enum TranscriptStatus {
+  UPLOADED
+  PROCESSING
+  ANALYZED
+  FAILED
+  DELETED
+}
+
+// AI Analysis results
+model Analysis {
+  id                String          @id @default(uuid())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  type              AnalysisType
+  status            AnalysisStatus  @default(PENDING)
+  startedAt         DateTime?
+  completedAt       DateTime?
+  errorMessage      String?
+  
+  // Analysis data
+  rawResults        Json            @default("{}")
+  
+  // Relations
+  transcriptId      String
+  transcript        Transcript      @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  insights          Insight[]
+  
+  @@index([transcriptId])
+  @@index([status])
+  @@index([type])
+}
+
+enum AnalysisType {
+  SENTIMENT
+  OBJECTION
+  RESPONSE
+  OVERALL
+  CUSTOM
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Actionable insights derived from analysis
+model Insight {
+  id                String          @id @default(uuid())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  type              InsightType
+  title             String
+  description       String
+  category          String?
+  tags              String[]
+  importance        Int             @default(1) // 1-5 scale of importance
+  aiConfidence      Float?          // AI confidence score (0-1)
+  userFeedback      UserFeedback?
+  
+  // Relations
+  transcriptId      String
+  transcript        Transcript      @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  analysisId        String
+  analysis          Analysis        @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  userId            String?
+  user              User?           @relation(fields: [userId], references: [id])
+  teamId            String?
+  team              Team?           @relation(fields: [teamId], references: [id])
+  reportItems       ReportItem[]
+  
+  @@index([transcriptId])
+  @@index([analysisId])
+  @@index([userId])
+  @@index([teamId])
+  @@index([type])
+}
+
+enum InsightType {
+  OBJECTION
+  SENTIMENT
+  RESPONSE_QUALITY
+  TALK_RATIO
+  CALL_STRUCTURE
+  CUSTOM
+}
+
+enum UserFeedback {
+  HELPFUL
+  NOT_HELPFUL
+  INCORRECT
+}
+
+// Reports for users and teams
+model Report {
+  id                String          @id @default(uuid())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  title             String
+  description       String?
+  type              ReportType
+  dateRange         Json            // Start and end dates for report data
+  generatedUrl      String?         // URL to download generated report file
+  status            ReportStatus    @default(PENDING)
+  
+  // Relations
+  userId            String
+  user              User            @relation(fields: [userId], references: [id])
+  teamId            String?
+  team              Team?           @relation(fields: [teamId], references: [id])
+  reportItems       ReportItem[]
+  
+  @@index([userId])
+  @@index([teamId])
+  @@index([type])
+  @@index([status])
+}
+
+enum ReportType {
+  INDIVIDUAL_PERFORMANCE
+  TEAM_PERFORMANCE
+  OBJECTION_LIBRARY
+  SENTIMENT_TRENDS
+  CUSTOM
+}
+
+enum ReportStatus {
+  PENDING
+  GENERATING
+  COMPLETED
+  FAILED
+}
+
+model ReportItem {
+  id                String          @id @default(uuid())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  type              String          // Chart, table, text, etc.
+  data              Json
+  order             Int             @default(0)
+  
+  // Relations
+  reportId          String
+  report            Report          @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  insightId         String?
+  insight           Insight?        @relation(fields: [insightId], references: [id])
+  
+  @@index([reportId])
+  @@index([insightId])
+}
+
+// Subscription and billing
+model Subscription {
+  id                String              @id @default(uuid())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  stripeSubscriptionId String           @unique
+  status            SubscriptionStatus  @default(ACTIVE)
+  plan              PlanType
+  startDate         DateTime            @default(now())
+  endDate           DateTime?
+  cancelAtPeriodEnd Boolean             @default(false)
+  trialEndsAt       DateTime?
+  
+  // Billing info
+  nextBillingDate   DateTime?
+  amount            Float               // Amount in dollars
+  interval          BillingInterval
+  metadata          Json                @default("{}")
+  
+  // Relations
+  userId            String              @unique
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([status])
+  @@index([plan])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+  INCOMPLETE
+}
+
+enum PlanType {
+  SALES_REP
+  SALES_MANAGER
+  SALES_COACH
+}
+
+enum BillingInterval {
+  MONTHLY
+  ANNUALLY
+}
+
+
+// Usage tracking
+model UsageStat {
+  id                String      @id @default(uuid())
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  type              String      // TRANSCRIPT_UPLOAD, API_CALL, etc.
+  count             Int         @default(1)
+  metadata          Json        @default("{}")
+  period            String      // DAILY, MONTHLY
+  periodStart       DateTime
+  periodEnd         DateTime
+  
+  // Relations
+  userId            String
+  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([type])
+  @@index([periodStart, periodEnd])
+}
+
+// Integrations
+
+model UserIntegration {
+  id                String              @id @default(uuid())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  type              IntegrationType
+  status            IntegrationStatus   @default(CONNECTED)
+  config            Json                @default("{}")
+  lastSyncAt        DateTime?
+  error             String?
+  
+  // Relations
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([type])
+}
+
+enum IntegrationType {
+  ZOOM
+  GOOGLE_CALENDAR
+  SALESFORCE
+  HUBSPOT
+  SLACK
+  TEAMS
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  ERROR
+  PENDING
+}
+
+// Support and notifications
+model SupportTicket {
+  id                String              @id @default(uuid())
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  subject           String
+  description       String
+  status            SupportTicketStatus @default(OPEN)
+  priority          TicketPriority      @default(MEDIUM)
+  
+  // Relations
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@index([priority])
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
 }
