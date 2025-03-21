@@ -22,7 +22,7 @@ enum Status {
 }
 
 model User {
-  id            String             @id @default(uuid())
+  id            String             @id @default(uuid()) @db.Uuid
   firstName     String
   lastName      String
   email         String             @unique
@@ -35,7 +35,7 @@ model User {
 }
 
 model Organization {
-  id        String             @id @default(uuid())
+  id        String             @id @default(uuid()) @db.Uuid
   name      String
   phone     String?
   address   String?
@@ -49,8 +49,8 @@ model Organization {
 }
 
 model UserOrganization {
-  userId         String
-  organizationId String
+  userId         String @db.Uuid
+  organizationId String @db.Uuid
   user           User         @relation(fields: [userId], references: [id])
   organization   Organization @relation(fields: [organizationId], references: [id])
 
@@ -58,7 +58,7 @@ model UserOrganization {
 }
 
 model Team {
-  id          String      @id @default(uuid())
+  id          String      @id @default(uuid()) @db.Uuid
   name        String
   description String?
   price       Float?
@@ -69,9 +69,9 @@ model Team {
 }
 
 model CallAsset {
-  id         String    @id @default(uuid())
-  userId     String
-  teamId     String
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String @db.Uuid
+  teamId     String @db.Uuid
   content    String?
   type       String?
   date       DateTime?
