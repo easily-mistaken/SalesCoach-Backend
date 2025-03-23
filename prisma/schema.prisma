@@ -34,6 +34,7 @@ model Organization {
   id        String             @id @default(uuid()) @db.Uuid
   users     UserOrganization[]
   teams     Team[]
+  invites   Invite[]
 }
 
 model UserOrganization {
@@ -48,12 +49,11 @@ model UserOrganization {
 model Team {
   name        String
   description String?
-  price       Float?
-  image       String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   id          String      @id @default(uuid()) @db.Uuid
   callAssets  CallAsset[]
+  invites     Invite[]
   organizationId String @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
 }
@@ -72,6 +72,19 @@ model CallAsset {
   teamId     String    @db.Uuid
   team       Team      @relation(fields: [teamId], references: [id])
   user       User      @relation(fields: [userId], references: [id])
+}
+
+model Invite {
+  id          String   @id @default(uuid()) @db.Uuid
+  teamId      String   @db.Uuid
+  role        Role
+  email       String
+  invitedBy   String   @db.Uuid
+  timestamp   DateTime @default(now())
+  status      Status   @default(PENDING)
+  organizationId String @db.Uuid
+  team   Team @relation(fields: [teamId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
 }
 
 enum Role {
