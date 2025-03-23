@@ -7,7 +7,70 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User with roles: admin, sales-rep, coach, manager
+model User {
+  firstName       String?
+  lastName        String?
+  email           String?            @unique
+  phone           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime?          @updatedAt
+  role            Role               @default(ADMIN)
+  id              String             @id @default(uuid()) @db.Uuid
+  callAssets      CallAsset[]
+  organizations   UserOrganization[]
+  isEmailVerified Boolean            @default(false)
+}
+
+model Organization {
+  name      String
+  phone     String?
+  address   String?
+  city      String?
+  state     String?
+  zip       String?
+  country   String?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  id        String             @id @default(uuid()) @db.Uuid
+  users     UserOrganization[]
+}
+
+model UserOrganization {
+  userId         String       @db.Uuid
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  user           User         @relation(fields: [userId], references: [id])
+
+  @@id([userId, organizationId])
+}
+
+model Team {
+  name        String
+  description String?
+  price       Float?
+  image       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  id          String      @id @default(uuid()) @db.Uuid
+  callAssets  CallAsset[]
+}
+
+model CallAsset {
+  content    String?
+  type       String?
+  date       DateTime?
+  time       DateTime?
+  status     Status    @default(PENDING)
+  transcript String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  teamId     String    @db.Uuid
+  team       Team      @relation(fields: [teamId], references: [id])
+  user       User      @relation(fields: [userId], references: [id])
+}
+
 enum Role {
   SALES_REP
   COACH
@@ -19,67 +82,4 @@ enum Status {
   PENDING
   SUCCESS
   FAIL
-}
-
-model User {
-  id            String             @id @default(uuid()) @db.Uuid
-  firstName     String
-  lastName      String
-  email         String             @unique
-  phone         String?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  role          Role               @default(ADMIN)
-  callAssets    CallAsset[]
-  organizations UserOrganization[]
-}
-
-model Organization {
-  id        String             @id @default(uuid()) @db.Uuid
-  name      String
-  phone     String?
-  address   String?
-  city      String?
-  state     String?
-  zip       String?
-  country   String?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
-  users     UserOrganization[]
-}
-
-model UserOrganization {
-  userId         String @db.Uuid
-  organizationId String @db.Uuid
-  user           User         @relation(fields: [userId], references: [id])
-  organization   Organization @relation(fields: [organizationId], references: [id])
-
-  @@id([userId, organizationId])
-}
-
-model Team {
-  id          String      @id @default(uuid()) @db.Uuid
-  name        String
-  description String?
-  price       Float?
-  image       String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  callAssets  CallAsset[]
-}
-
-model CallAsset {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String @db.Uuid
-  teamId     String @db.Uuid
-  content    String?
-  type       String?
-  date       DateTime?
-  time       DateTime?
-  status     Status    @default(PENDING)
-  transcript String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  user       User      @relation(fields: [userId], references: [id])
-  team       Team      @relation(fields: [teamId], references: [id])
 }
