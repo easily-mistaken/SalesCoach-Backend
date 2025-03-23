@@ -5,20 +5,18 @@ const prisma = new PrismaClient();
 
 const organisationRouter = Router();
 
-// TODO: Implement the route for creating a new organisation
 organisationRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const { name, phone, address, city, state, zip, country } = req.body;
 
     // @ts-ignore
     const userId = req.user?.id;
-    // Validate the input
+
     if (!name || !userId) {
         res.status(400).json({ message: 'Organisation name and user ID are required' });
         return;
     }
 
     try {
-        // Create a new organisation and associate it with the user in the database
         const newOrganisation = await prisma.organization.create({
             data: {
                 name,
@@ -43,5 +41,4 @@ organisationRouter.post('/', async (req: Request, res: Response): Promise<void> 
     }
 });
 
-// Export the organisation router
 export default organisationRouter;

@@ -33,6 +33,17 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
             // Fetch user from the database using Prisma
             const user = await prisma.user.findUnique({
                 where: { id: decoded.sub },
+                include: {
+                    organizations: {
+                        include: {
+                            organization: {
+                                include: {
+                                    teams: true,
+                                },
+                            },
+                        },
+                    },
+                },
             });
 
             if (!user) {

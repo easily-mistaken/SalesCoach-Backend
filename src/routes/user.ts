@@ -7,24 +7,7 @@ const userRouter = Router();
 
 userRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     // @ts-ignore
-    const { id } = req.user;
-
-    const user = await prisma.user.findUnique({
-        where: {
-            id: id,
-        },
-        include: {
-            organizations: {
-                include: {
-                    organization: {
-                        include: {
-                            teams: true,
-                        },
-                    },
-                },
-            },
-        },
-    });
+    const user = req.user;
 
     res.json(user);
 });
