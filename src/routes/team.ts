@@ -28,7 +28,8 @@ teamRouter.post('/', adminOrManagerOfOrg, async (req: Request, res: Response): P
 // TODO: send email to user with link to signup
 
 // get all teams
-teamRouter.get('/', adminOrManagerOfOrg, async (req: Request, res: Response): Promise<void> => {
+// TODO: different auth for this route as this returns roles based output
+teamRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     const { organizationId } = req.params;
 
     const teams = await prisma.team.findMany({
