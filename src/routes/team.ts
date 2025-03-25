@@ -24,8 +24,20 @@ teamRouter.post('/', adminOrManagerOfOrg, async (req: Request, res: Response): P
 });
 
 // invite user to team route
-// TODO: new table of invites with email, timestamp, invitedBy, teamId
 // TODO: send email to user with link to signup
+teamRouter.post('/invite', adminOrManagerOfOrg, async (req: Request, res: Response): Promise<void> => {
+    const { email, teamId, role } = req.body;
+    // @ts-ignore
+    const user = req.user;
+
+    const invite = await prisma.invite.create({
+        data: { email, teamId, role, invitedBy: user.id, organizationId: user.organizationId },
+    });
+
+    // send email to the invited user
+
+    res.status(201).json({ message: 'Invite sent' });
+});
 
 // get all teams
 // TODO: different auth for this route as this returns roles based output
@@ -61,8 +73,6 @@ teamRouter.delete('/:id', async (req: Request, res: Response): Promise<void> => 
     res.json({ message: 'Team deleted' });
 });
 
-// add user to team route
 // remove user from team route
-// get all users in a team route
 
 export default teamRouter;

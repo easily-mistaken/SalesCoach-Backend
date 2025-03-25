@@ -19,6 +19,8 @@ model User {
   callAssets      CallAsset[]
   organizations   UserOrganization[]
   isEmailVerified Boolean            @default(false)
+  teamId          String[]           @db.Uuid
+  team            Team[]
 }
 
 model Organization {
@@ -56,6 +58,7 @@ model Team {
   invites     Invite[]
   organizationId String @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
+  users         User[]
 }
 
 model CallAsset {
