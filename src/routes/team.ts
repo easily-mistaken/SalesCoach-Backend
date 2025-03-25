@@ -7,7 +7,7 @@ const prisma = new PrismaClient();
 const teamRouter = Router();
 
 // create team route
-teamRouter.post('/', adminOrManagerOfOrg, async (req: Request, res: Response): Promise<void> => {
+teamRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     // @ts-ignore
     const user = req.user;
     const { name, description, organizationId } = req.body;
@@ -42,11 +42,12 @@ teamRouter.post('/invite', adminOrManagerOfOrg, async (req: Request, res: Respon
 // get all teams
 // TODO: different auth for this route as this returns roles based output
 teamRouter.get('/', async (req: Request, res: Response): Promise<void> => {
-    const { organizationId } = req.params;
+    const { organizationId } = req.query;
+    console.log("organizationId", organizationId);
 
     const teams = await prisma.team.findMany({
         where: {
-            organizationId: organizationId,
+            organizationId: Array.isArray(organizationId) ? organizationId[0] : organizationId,
         },
     });
 

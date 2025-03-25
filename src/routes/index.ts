@@ -8,6 +8,6 @@ const router = Router();
 
 router.use('/organisation', authMiddleware, organisationRouter);
 router.use('/user', authMiddleware, userRouter);
-router.use('/team', authMiddleware, teamRouter);
+router.use('/team', teamRouter);
 
 export default router;
