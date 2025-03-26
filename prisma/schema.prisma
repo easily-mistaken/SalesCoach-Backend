@@ -14,7 +14,6 @@ model User {
   phone           String?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime?          @updatedAt
-  role            Role               @default(ADMIN)
   id              String             @id @default(uuid()) @db.Uuid
   callAssets      CallAsset[]
   organizations   UserOrganization[]
@@ -44,6 +43,7 @@ model UserOrganization {
   organizationId String       @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
   user           User         @relation(fields: [userId], references: [id])
+  role           Role
 
   @@id([userId, organizationId])
 }

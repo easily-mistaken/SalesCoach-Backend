@@ -29,6 +29,7 @@ organisationRouter.post('/', async (req: Request, res: Response): Promise<void> 
                 users: {
                     create: {
                         userId: userId,
+                        role: "ADMIN"
                     },
                 },
             },

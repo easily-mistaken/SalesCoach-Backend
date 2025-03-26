@@ -18,6 +18,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
         if (!token) {
             res.status(401).json({ message: 'Unauthorized' });
+            console.log("no token");
             return;
         }
 
@@ -25,6 +26,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         jwt.verify(token, process.env.JWT_SECRET as string, async (err: any, decoded: any) => {
             if (err) {
                 res.status(401).json({ message: 'Unauthorized' });
+                console.log("invalid token")
                 return;
             }
 
@@ -48,6 +50,7 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
 
             if (!user) {
                 res.status(401).json({ message: 'Unauthorized' });
+                console.log("no user")
                 return;
             }
 
