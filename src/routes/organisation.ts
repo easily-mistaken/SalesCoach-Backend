@@ -5,6 +5,25 @@ const prisma = new PrismaClient();
 
 const organisationRouter = Router();
 
+organisationRouter.get('/', async (req: Request, res: Response): Promise<void> =>{
+    try {
+        // @ts-ignore
+        const userId = req.user?.id;
+        const organisations = await prisma.userOrganization.findMany({
+            where: {
+                userId: userId
+            },
+            include: {
+                organization: true,
+            }
+        })
+
+        res.json(organisations)
+    } catch {
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 organisationRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     const { name, phone, address, city, state, zip, country } = req.body;
 
