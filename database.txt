@@ -1,7 +1,0 @@
-entities
-  - user: id, name, email, phone, created_at, updated_at, ( role: admin, manager, sales-rep, coach ), plan
-  - organization: id, name, phone, address, city, state, zip, country, created_at, updated_at
-  - team: id, name, description, price, image, created_at, updated_at
-  - call_asset: id, user_id, team_id, content, type, date, time, status: ( pending, success, fail ), transcript, created_at, updated_at
-  // TODO: For next week
-  - transcript: id, call_id, content, analysis, created_at, updated_at
