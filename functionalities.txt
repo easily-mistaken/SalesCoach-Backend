@@ -1,4 +1,0 @@
-- organization - create, read, update, delete
-- create team - create, read many, read, update, delete
-- invite user - create, read many, read, update, delete
-- upload call asset - create, read, update, delete
