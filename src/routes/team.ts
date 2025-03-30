@@ -60,6 +60,10 @@ teamRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 teamRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   const { organizationId } = req.query;
 
+  if (!organizationId){
+    res.status(400).json({ message: "Organization ID is required" });
+  }
+
   const teams = await prisma.team.findMany({
     where: {
       organizationId: Array.isArray(organizationId)
