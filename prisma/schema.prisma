@@ -58,6 +58,7 @@ model Team {
   organizationId String @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
   users         User[]
+  invites       Invite[] @relation("InviteTeams")
 }
 
 model CallAsset {
@@ -75,15 +76,19 @@ model CallAsset {
 }
 
 model Invite {
-  id          String   @id @default(uuid()) @db.Uuid
-  role        Role
-  email       String
-  invitedBy   String   @db.Uuid
-  timestamp   DateTime @default(now())
-  status      Status   @default(PENDING)
-  organizationId String @db.Uuid
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  invitedByUser  User  @relation(fields: [invitedBy], references: [id], name: "UserInvites")
+  id              String   @id @default(uuid()) @db.Uuid
+  role            Role
+  email           String
+  invitedBy       String   @db.Uuid
+  timestamp       DateTime @default(now())
+  status          Status   @default(PENDING)
+  organizationId  String   @db.Uuid
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  invitedByUser   User     @relation(fields: [invitedBy], references: [id], name: "UserInvites")
+  
+  // Add the new field for team IDs
+  teamIds         String[]  @db.Uuid // This is the UUID array for teams
+  teams           Team[]    @relation("InviteTeams") // Relation to Team model
 }
 
 enum Role {

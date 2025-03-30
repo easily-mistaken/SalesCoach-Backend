@@ -41,17 +41,17 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 // Create a new invitation
 inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, teamId, role } = req.body;
+    const { email, teamIds, role } = req.body; // Changed 'teams' to 'teamIds' to match the schema
     // @ts-ignore
     const user = req.user;
 
     const invite = await prisma.invite.create({
       data: {
         email,
-        teamId,
         role,
         invitedBy: user.id,
         organizationId: user.organizationId,
+        teamIds, // Added teamIds to the invite creation
       },
     });
 
