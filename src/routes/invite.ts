@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { Router, Request, Response } from "express";
+import { authMiddleware } from "../middleware/auth";
 // import { sendInviteEmail } from "../services/emailService"; // We'll ignore email service for now
 
 const prisma = new PrismaClient();
@@ -46,6 +47,25 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
     // @ts-ignore
     const user = req.user;
 
+    // Check if the user is part of the organization
+    const userOrg = await prisma.userOrganization.findUnique({
+      where: {
+        userId_organizationId: {
+          userId: user.id,
+          organizationId: organizationId,
+        },
+      },
+    });
+
+    if (!userOrg) {
+      res.status(403).json({ error: "User does not belong to the organization" });
+    }
+
+    // Check if the user's role is either ADMIN or MANAGER
+    if (userOrg?.role !== "ADMIN" && userOrg?.role !== "MANAGER") {
+      res.status(403).json({ error: "Not enough permissions" });
+    }
+
     const invite = await prisma.invite.create({
       data: {
         email,
@@ -63,6 +83,52 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   } catch (error) {
     console.error("Error creating invite:", error);
     res.status(500).json({ error: "Failed to create invite" });
+  }
+});
+
+inviteRouter.post("/accept", authMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const { inviteId } = req.body; // Get the invite ID from the request body
+  // @ts-ignore
+  const userId = req.user?.id;
+
+  if (!inviteId || !userId) {
+    res.status(400).json({ error: "Invite ID and user ID are required" });
+    return;
+  }
+
+  try {
+    // Fetch the invite to check its validity
+    const invite = await prisma.invite.findUnique({
+      where: { id: inviteId },
+      include: {
+        organization: true,
+      },
+    });
+
+    if (!invite) {
+      res.status(404).json({ error: "Invite not found" });
+      return;
+    }
+
+    // Add the user to the organization
+    await prisma.userOrganization.create({
+      data: {
+        userId: userId,
+        organizationId: invite.organizationId,
+        role: invite.role,
+      },
+    });
+
+    // Optionally, update the invite status to SUCCESS
+    await prisma.invite.update({
+      where: { id: inviteId },
+      data: { status: "SUCCESS" },
+    });
+
+    res.status(200).json({ message: "Invite accepted and user added to organization" });
+  } catch (error) {
+    console.error("Error accepting invite:", error);
+    res.status(500).json({ error: "Failed to accept invite" });
   }
 });
 
