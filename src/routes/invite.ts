@@ -39,9 +39,10 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 });
 
 // Create a new invitation
+// TODO: strict validation of role and organisation and team access
 inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, teamIds, role } = req.body; // Changed 'teams' to 'teamIds' to match the schema
+    const { email, teamIds, role, organizationId } = req.body; // Changed 'teams' to 'teamIds' to match the schema
     // @ts-ignore
     const user = req.user;
 
@@ -50,13 +51,13 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
         email,
         role,
         invitedBy: user.id,
-        organizationId: user.organizationId,
+        organizationId: organizationId,
         teamIds, // Added teamIds to the invite creation
       },
     });
 
     console.log("Invite created:", invite);
-    // send email to the invited user
+    // TODO: send email to the invited user
 
     res.status(201).json({ message: "Invite sent" });
   } catch (error) {

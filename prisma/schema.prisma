@@ -61,9 +61,15 @@ model Team {
   invites       Invite[] @relation("InviteTeams")
 }
 
+enum CallAssetType {
+  FILE
+  TEXT
+}
+
 model CallAsset {
-  content    String?
-  type       String?
+  content    String
+  type       CallAssetType
+  name       String?
   date       DateTime?
   time       DateTime?
   status     Status    @default(PENDING)
