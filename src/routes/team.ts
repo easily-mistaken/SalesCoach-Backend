@@ -32,28 +32,28 @@ teamRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 
 // invite user to team route
 // TODO: send email to user with link to signup
-teamRouter.post(
-  "/invite",
-  async (req: Request, res: Response): Promise<void> => {
-    const { email, teamId, role } = req.body;
-    // @ts-ignore
-    const user = req.user;
+// teamRouter.post(
+//   "/invite",
+//   async (req: Request, res: Response): Promise<void> => {
+//     const { email, teamId, role } = req.body;
+//     // @ts-ignore
+//     const user = req.user;
 
-    const invite = await prisma.invite.create({
-      data: {
-        email,
-        teamId,
-        role,
-        invitedBy: user.id,
-        organizationId: user.organizationId,
-      },
-    });
+//     const invite = await prisma.invite.create({
+//       data: {
+//         email,
+//         teamId,
+//         role,
+//         invitedBy: user.id,
+//         organizationId: user.organizationId,
+//       },
+//     });
 
-    // send email to the invited user
+//     // send email to the invited user
 
-    res.status(201).json({ message: "Invite sent" });
-  }
-);
+//     res.status(201).json({ message: "Invite sent" });
+//   }
+// );
 
 // get all teams
 // TODO: different auth for this route as this returns roles based output
