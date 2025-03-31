@@ -9,12 +9,14 @@ const teamRouter = Router();
 teamRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   // @ts-ignore
   const user = req.user;
-  if (user.role !== "ADMIN" || user.role !== "MANAGER") {
-    res
-      .status(401)
-      .json({ message: "You are not authorized to perform this action" });
-    return;
-  }
+  // if (user.role !== "ADMIN" || user.role !== "MANAGER") {
+  //   res
+  //     .status(401)
+  //     .json({ message: "You are not authorized to perform this action" });
+  //   return;
+  // }
+
+  // TODO: role shifted to the organization level so do the check in different way
 
   // user belongs to the organization
   const { name, description, organizationId } = req.body;
@@ -60,7 +62,7 @@ teamRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 teamRouter.get("/", async (req: Request, res: Response): Promise<void> => {
   const { organizationId } = req.query;
 
-  if (!organizationId){
+  if (!organizationId) {
     res.status(400).json({ message: "Organization ID is required" });
   }
 
