@@ -9,7 +9,7 @@ const router = Router();
 
 router.use("/organisation", authMiddleware, organisationRouter);
 router.use("/user", authMiddleware, userRouter);
-router.use("/team", teamRouter);
+router.use("/team", authMiddleware, teamRouter);
 router.use("/invite", authMiddleware, inviteRouter);
 
 export default router;

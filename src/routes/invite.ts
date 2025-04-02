@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { Router, Request, Response } from "express";
 import { authMiddleware } from "../middleware/auth";
+import { connect } from "http2";
 // import { sendInviteEmail } from "../services/emailService"; // We'll ignore email service for now
 
 const prisma = new PrismaClient();
@@ -72,7 +73,14 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
         role,
         invitedBy: user.id,
         organizationId: organizationId,
-        teamIds, // Added teamIds to the invite creation
+        teams: {
+          // @ts-ignore
+          create: teamIds.map(teamId => ({
+            team: {
+              connect: {id: teamId}
+            }
+          }))
+        }, // Added teamIds to the invite creation
       },
     });
 

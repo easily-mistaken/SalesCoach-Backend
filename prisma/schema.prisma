@@ -18,8 +18,7 @@ model User {
   callAssets      CallAsset[]
   organizations   UserOrganization[]
   isEmailVerified Boolean            @default(false)
-  teamId          String[]           @db.Uuid
-  invitesSent Invite[] @relation("UserInvites")
+  invitesSent     Invite[]           @relation("UserInvites")
 }
 
 model Organization {
@@ -41,37 +40,35 @@ model Organization {
 model UserOrganization {
   userId         String       @db.Uuid
   organizationId String       @db.Uuid
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  user           User         @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   role           Role
-
-  teams          UserOrganizationTeam[]
+  teamAccess     UserOrganizationTeam[]
 
   @@id([userId, organizationId])
 }
 
 model Team {
-  name        String
-  description String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  id          String      @id @default(uuid()) @db.Uuid
-  organizationId String @db.Uuid
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  invites       Invite[] @relation("InviteTeams")
-
-  userOrganizations UserOrganizationTeam[]
+  name           String
+  description    String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  id             String                @id @default(uuid()) @db.Uuid
+  organizationId String                @db.Uuid
+  organization   Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members        UserOrganizationTeam[]
+  invites        InviteTeam[]
 }
 
-// Join table for the many-to-many relationship between users and teams
+// Properly defined join table for UserOrganization to Team
 model UserOrganizationTeam {
-  userOrganizationId String @db.Uuid
-  teamId            String @db.Uuid
+  userId         String           @db.Uuid
+  organizationId String           @db.Uuid
+  teamId         String           @db.Uuid
+  team           Team             @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userOrg        UserOrganization @relation(fields: [userId, organizationId], references: [userId, organizationId], onDelete: Cascade)
 
-  userOrganization  UserOrganization @relation(fields: [userOrganizationId, teamId], references: [userId, organizationId])
-  team              Team             @relation(fields: [teamId], references: [id])
-
-  @@id([userOrganizationId, teamId])  // Composite primary key
+  @@id([userId, organizationId, teamId])
 }
 
 enum CallAssetType {
@@ -83,29 +80,36 @@ model CallAsset {
   content    String
   type       CallAssetType
   name       String?
-  status     Status    @default(PENDING)
+  status     Status         @default(PENDING)
   transcript String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
-  user       User      @relation(fields: [userId], references: [id])
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @db.Uuid
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Invite {
-  id              String   @id @default(uuid()) @db.Uuid
-  role            Role
-  email           String
-  invitedBy       String   @db.Uuid
-  timestamp       DateTime @default(now())
-  status          Status   @default(PENDING)
-  organizationId  String   @db.Uuid
-  organization    Organization @relation(fields: [organizationId], references: [id])
-  invitedByUser   User     @relation(fields: [invitedBy], references: [id], name: "UserInvites")
-  
-  // Add the new field for team IDs
-  teamIds         String[]  @db.Uuid // This is the UUID array for teams
-  teams           Team[]    @relation("InviteTeams") // Relation to Team model
+  id             String       @id @default(uuid()) @db.Uuid
+  role           Role
+  email          String
+  invitedBy      String       @db.Uuid
+  timestamp      DateTime     @default(now())
+  status         Status       @default(PENDING)
+  organizationId String       @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedByUser  User         @relation(fields: [invitedBy], references: [id], name: "UserInvites", onDelete: Cascade)
+  teams          InviteTeam[]
+}
+
+// Join table for Invite to Team
+model InviteTeam {
+  inviteId String @db.Uuid
+  teamId   String @db.Uuid
+  invite   Invite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  team     Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([inviteId, teamId])
 }
 
 enum Role {
@@ -120,6 +124,3 @@ enum Status {
   SUCCESS
   FAIL
 }
-
-// analysis table
-// objection table

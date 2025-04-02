@@ -9,37 +9,27 @@ const teamRouter = Router();
 teamRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   // @ts-ignore
   const user = req.user;
-  // if (user.role !== "ADMIN" || user.role !== "MANAGER") {
-  //   res
-  //     .status(401)
-  //     .json({ message: "You are not authorized to perform this action" });
-  //   return;
-  // }
-
-  // TODO: role shifted to the organization level so do the check in different way
-
+  
   // user belongs to the organization
   const { name, description, organizationId } = req.body;
 
+  // TODO: check if the user has perm to create the team in the org
   const team = await prisma.team.create({
     data: {
       name,
       description,
       organizationId,
+      members: {
+        create: {
+          userId: user?.id,
+          organizationId,
+        }
+      } 
     },
   });
 
   res.status(201).json({ message: "Team created", team });
 });
-
-// invite user to team route
-// TODO: send email to user with link to signup
-// teamRouter.post(
-//   "/invite",
-//   async (req: Request, res: Response): Promise<void> => {
-//     const { email, teamId, role } = req.body;
-//     // @ts-ignore
-//     const user = req.user;
 
 // get all teams
 // TODO: different auth for this route as this returns roles based output
@@ -68,12 +58,12 @@ teamRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
   const team = await prisma.team.findUnique({
     where: { id: id },
     include: {
-      userOrganizations: {
+      members: {
         include: {
-          userOrganization: {
+          userOrg: {
             include: {
               user: true,
-            }
+            }   
           }
         }
       },
