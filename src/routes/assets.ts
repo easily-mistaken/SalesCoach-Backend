@@ -7,7 +7,7 @@ const assetsRouter = Router();
 
 // upload asset
 assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
-    const { content, type, status, transcript, teamId, userId } = req.body;
+    const { content, type, status, transcript, userId } = req.body;
 
     const asset = await prisma.callAsset.create({
         data: { 

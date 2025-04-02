@@ -35,6 +35,7 @@ organisationRouter.post('/', async (req: Request, res: Response): Promise<void> 
         return;
     }
 
+
     try {
         const newOrganisation = await prisma.organization.create({
             data: {
