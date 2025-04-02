@@ -19,7 +19,6 @@ model User {
   organizations   UserOrganization[]
   isEmailVerified Boolean            @default(false)
   teamId          String[]           @db.Uuid
-  team            Team[]
   invitesSent Invite[] @relation("UserInvites")
 }
 
@@ -46,6 +45,8 @@ model UserOrganization {
   user           User         @relation(fields: [userId], references: [id])
   role           Role
 
+  teams          UserOrganizationTeam[]
+
   @@id([userId, organizationId])
 }
 
@@ -57,8 +58,20 @@ model Team {
   id          String      @id @default(uuid()) @db.Uuid
   organizationId String @db.Uuid
   organization   Organization @relation(fields: [organizationId], references: [id])
-  users         User[]
   invites       Invite[] @relation("InviteTeams")
+
+  userOrganizations UserOrganizationTeam[]
+}
+
+// Join table for the many-to-many relationship between users and teams
+model UserOrganizationTeam {
+  userOrganizationId String @db.Uuid
+  teamId            String @db.Uuid
+
+  userOrganization  UserOrganization @relation(fields: [userOrganizationId, teamId], references: [userId, organizationId])
+  team              Team             @relation(fields: [teamId], references: [id])
+
+  @@id([userOrganizationId, teamId])  // Composite primary key
 }
 
 enum CallAssetType {
@@ -70,8 +83,6 @@ model CallAsset {
   content    String
   type       CallAssetType
   name       String?
-  date       DateTime?
-  time       DateTime?
   status     Status    @default(PENDING)
   transcript String?
   createdAt  DateTime  @default(now())
