@@ -46,6 +46,18 @@ teamRouter.get("/", async (req: Request, res: Response): Promise<void> => {
         ? organizationId[0]
         : organizationId,
     },
+    include: {
+      members: {
+        include: {
+          userOrg: {
+            include: {
+              user: true,
+            }   
+          }
+        }
+      },
+
+    }
   });
 
   res.json(teams);
