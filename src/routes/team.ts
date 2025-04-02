@@ -41,22 +41,6 @@ teamRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 //     // @ts-ignore
 //     const user = req.user;
 
-//     const invite = await prisma.invite.create({
-//       data: {
-//         email,
-//         teamId,
-//         role,
-//         invitedBy: user.id,
-//         organizationId: user.organizationId,
-//       },
-//     });
-
-//     // send email to the invited user
-
-//     res.status(201).json({ message: "Invite sent" });
-//   }
-// );
-
 // get all teams
 // TODO: different auth for this route as this returns roles based output
 teamRouter.get("/", async (req: Request, res: Response): Promise<void> => {
@@ -83,6 +67,18 @@ teamRouter.get("/:id", async (req: Request, res: Response): Promise<void> => {
 
   const team = await prisma.team.findUnique({
     where: { id: id },
+    include: {
+      userOrganizations: {
+        include: {
+          userOrganization: {
+            include: {
+              user: true,
+            }
+          }
+        }
+      },
+
+    }
   });
 
   res.json(team);
@@ -99,7 +95,5 @@ teamRouter.delete(
     res.json({ message: "Team deleted" });
   }
 );
-
-// remove user from team route
 
 export default teamRouter;
