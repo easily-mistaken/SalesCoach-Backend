@@ -16,14 +16,19 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Enable CORS
-app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+app.use(
+  cors({
+    origin: "*",
+    credentials: true,
+  })
+);
 
 // Use the routes
-app.use('/api', routes);
+app.use("/api", routes);
 
 // Middleware to check if the user is authenticated
-app.get('/', authMiddleware, (req, res) => {
-  res.status(200).json({ message: 'API is running' });
+app.get("/", authMiddleware, (req, res) => {
+  res.status(200).json({ message: "API is running" });
 });
 
 // Start server
