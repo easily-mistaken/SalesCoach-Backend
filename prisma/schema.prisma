@@ -87,6 +87,49 @@ model CallAsset {
   id         String         @id @default(uuid()) @db.Uuid
   userId     String         @db.Uuid
   user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis   Analysis?
+}
+
+model Analysis {
+  id             String       @id @default(uuid()) @db.Uuid
+  title          String
+  date           DateTime
+  duration       String       // Format: "HH:MM:SS"
+  participants   String[]     // Array of participant names/roles
+  summary        String       @db.Text
+  overallSentiment Float
+  keyInsights    String[]     // Array of insights
+  recommendations String[]    // Array of recommendations
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  callAssetId    String       @unique @db.Uuid  // Foreign key to CallAsset
+  callAsset      CallAsset    @relation(fields: [callAssetId], references: [id], onDelete: Cascade)
+  objections     Objection[]  // One-to-many relation with Objection
+  sentimentEntries  SentimentEntry[] 
+}
+
+model Objection {
+  id            String    @id @default(uuid()) @db.Uuid
+  text          String    @db.Text
+  time          String    
+  response      String    @db.Text
+  effectiveness Float     
+  type          ObjectionType
+  success       Boolean
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  analysisId    String    @db.Uuid
+  analysis      Analysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+}
+
+model SentimentEntry {
+  id         String   @id @default(uuid()) @db.Uuid
+  time       String   // Format: "MM:SS"
+  score      Float    // Sentiment score at this time point
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  analysisId String   @db.Uuid
+  analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 }
 
 model Invite {
@@ -123,4 +166,13 @@ enum Status {
   PENDING
   SUCCESS
   FAIL
+}
+
+enum ObjectionType {
+  PRICE
+  TIMING
+  TRUST_RISK
+  COMPETITION
+  STAKEHOLDERS
+  OTHERS
 }

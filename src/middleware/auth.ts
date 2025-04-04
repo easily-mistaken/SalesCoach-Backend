@@ -1,6 +1,3 @@
-// TODO: a middlware to fetch the user details and store it in the req.user object
-// Cookie NAME: sb-olxzxwlzliidocxvlcdq-auth-token.0
-
 import { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
