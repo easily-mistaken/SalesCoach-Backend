@@ -21,10 +21,15 @@
   },
   "homepage": "https://github.com/easily-mistaken/SalesCoach-Backend#readme",
   "dependencies": {
+    "@langchain/community": "^0.3.39",
+    "@langchain/core": "^0.3.43",
+    "@langchain/openai": "^0.5.2",
     "@prisma/client": "^6.5.0",
     "@supabase/supabase-js": "^2.49.1",
     "@types/cookie-parser": "^1.4.8",
     "@types/jsonwebtoken": "^9.0.9",
+    "axios": "^1.8.4",
+    "community": "link:@types/@langchain/community",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -32,7 +37,10 @@
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
-    "morgan": "^1.10.0"
+    "langchain": "^0.3.20",
+    "morgan": "^1.10.0",
+    "pdf-parse": "^1.1.1",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
