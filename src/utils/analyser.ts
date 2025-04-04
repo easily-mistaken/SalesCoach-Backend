@@ -56,11 +56,6 @@ type TranscriptData = z.infer<typeof TranscriptAnalysis>;
 // Interface for analysis result including token usage
 interface AnalysisResult {
   data: TranscriptData;
-  tokenUsage: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
 }
 
 // Function to download and extract text from a remote PDF
@@ -215,47 +210,24 @@ async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisRe
       }))
     };
 
-    // Track token usage
-    const tokenUsage = {
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0
-    };
-
-    // Try to extract token usage from ChatOpenAI's internal tracking
-    try {
-      // @ts-ignore - Accessing private/undocumented property
-      const usage = model._lastCallTokenUsage || {};
-      tokenUsage.promptTokens = usage.promptTokens || 0;
-      tokenUsage.completionTokens = usage.completionTokens || 0;
-      tokenUsage.totalTokens = usage.totalTokens || 0;
-    } catch (error) {
-      console.warn("Unable to extract token usage information:", error);
-    }
 
     // Create complete result object
     const analysisResult: AnalysisResult = {
       data: processedResult,
-      tokenUsage
     };
 
     // Output to console and save to file
     console.log("Analysis complete!");
-    console.log("Token usage:", {
-      promptTokens: tokenUsage.promptTokens,
-      completionTokens: tokenUsage.completionTokens,
-      totalTokens: tokenUsage.totalTokens
-    });
 
     // Save both the data and token usage
-    const timestamp = Date.now();
-    const outputFilename = `transcript_analysis_${timestamp}.json`;
-    fs.writeFileSync(outputFilename, JSON.stringify(analysisResult, null, 2));
-    console.log(`Analysis saved to ${outputFilename}`);
+    // const timestamp = Date.now();
+    // const outputFilename = `transcript_analysis_${timestamp}.json`;
+    // fs.writeFileSync(outputFilename, JSON.stringify(analysisResult, null, 2));
+    // console.log(`Analysis saved to ${outputFilename}`);
 
     return analysisResult;
   } catch (error) {
-    console.error("Error in analysis:", error);
+    console.log("Error in analysis:", error);
     throw error;
   }
 }
