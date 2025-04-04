@@ -99,9 +99,9 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
          });
 
  } catch (error) {
+    console.log("Error processing asset:", error);
         
-        // If the asset was created but analysis failed, update its status
-        if (req.body && req.body.id) {
+    if (req.body && req.body.id) {
             try {
                 await prisma.callAsset.update({
                     where: { id: req.body.id },
