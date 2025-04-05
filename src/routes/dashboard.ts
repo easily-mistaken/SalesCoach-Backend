@@ -27,6 +27,7 @@ function canAccessAllOrgData(role: Role): boolean {
 // total transcripts count - take the orgId, if the user is manager/admin/coach in the org then send the count of all the transcripts in the org if sales rep then send the count of transcript uploaded by him in the org
 dashboardRouter.get('/transcriptsCount', async (req: Request, res: Response) => {
   try {
+    // @ts-ignore
     const userId = req.user?.id;
     const orgId = req.query.orgId as string;
     
@@ -68,6 +69,7 @@ dashboardRouter.get('/transcriptsCount', async (req: Request, res: Response) => 
 // average sentiment percentage - take the orgId from params, if the user is sales-rep send the average sentiment of the calls uploaded by him in the org in percentage else send average sentiment of all the calls
 dashboardRouter.get('/averageSentiment', async (req: Request, res: Response): Promise<void> => {
   try {
+    // @ts-ignore
     const userId = req.user?.id;
     const orgId = req.query.orgId as string;
     
@@ -127,6 +129,7 @@ dashboardRouter.get('/averageSentiment', async (req: Request, res: Response): Pr
 // objections handled count - same logic role based count and number of objections success
 dashboardRouter.get('/objectionsHandled', async (req: Request, res: Response): Promise<void> => {
   try {
+    // @ts-ignore
     const userId = req.user?.id;
     const orgId = req.query.orgId as string;
     
@@ -187,6 +190,7 @@ dashboardRouter.get('/objectionsHandled', async (req: Request, res: Response): P
 // talk ratio in percentage - lets do this again as we arent storing the ratio in the db
 dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<void> => {
   try {
+    // @ts-ignore
     const userId = req.user?.id;
     const orgId = req.query.orgId as string;
     
@@ -249,6 +253,7 @@ dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<v
 // the data is a array of length 10 with object looks like {name: "name of the call", positive: "overall positive of the call", negative: "overall negative of the call", neutral: "over neutral of the call"} all in percentage
 dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Promise<void> => {
   try {
+    // @ts-ignore
     const userId = req.user?.id;
     const orgId = req.query.orgId as string;
     
@@ -328,6 +333,7 @@ dashboardRouter.get('/commonObjections', async (req: Request, res: Response) => 
 // transcripts - same role based logic applies, paginated, returns call assets with the analysis 
 dashboardRouter.get('/transcripts', async (req: Request, res: Response): Promise<void> => {
   try {
+    // @ts-ignore
     const userId = req.user?.id;
     const orgId = req.query.orgId as string;
     const page = parseInt(req.query.page as string) || 1;
