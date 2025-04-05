@@ -11,8 +11,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
     try {
         const token = req.headers.authorization?.split(' ')[1];
 
-        // console.log('Token:', token);
-
         if (!token) {
             res.status(401).json({ message: 'Unauthorized' });
             console.log("no token");
@@ -27,8 +25,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
                 return;
             }
 
-            // console.log('Decoded token:', decoded);
-
             // Fetch user from the database using Prisma
             const user = await prisma.user.findUnique({
                 where: { id: decoded.sub },
@@ -37,11 +33,12 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
                         include: {
                             organization: {
                                 include: {
-                                    teams: true,
-                                },
+                                    callAssets: true
+                                }
                             },
-                        },
-                    },
+                            teamAccess: true,
+                        }
+                    }
                 },
             });
 
@@ -50,8 +47,6 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
                 console.log("no user")
                 return;
             }
-
-            // console.log('User:', user);
 
             // @ts-ignore
             req.user = user;
