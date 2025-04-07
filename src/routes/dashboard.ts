@@ -1,7 +1,36 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient, Role } from '@prisma/client';
+import { z } from 'zod'; // Add zod for validation
+
 const prisma = new PrismaClient();
 const dashboardRouter = Router();
+
+// Validation schemas
+const orgIdSchema = z.object({
+  orgId: z.string().uuid().nonempty({ message: 'Organization ID is required' })
+});
+
+const paginationSchema = z.object({
+  page: z.coerce.number().positive().default(1),
+  limit: z.coerce.number().positive().max(100).default(10)
+});
+
+// Helper function to validate request parameters
+function validateQuery<T extends z.ZodTypeAny>(
+  schema: T,
+  req: Request
+): { success: boolean; data?: z.infer<T>; error?: string } {
+  try {
+    const result = schema.parse(req.query);
+    return { success: true, data: result };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const errorMessages = error.errors.map(err => `${err.path}: ${err.message}`).join(', ');
+      return { success: false, error: errorMessages };
+    }
+    return { success: false, error: 'Invalid input parameters' };
+  }
+}
 
 // Helper function to check if user has access to organization data
 async function getUserOrgRole(userId: string, orgId: string) {
@@ -18,23 +47,31 @@ async function getUserOrgRole(userId: string, orgId: string) {
 
 // Helper function to determine if user can see all data in organization
 function canAccessAllOrgData(role: Role): boolean {
-    if (role == Role.ADMIN || Role.COACH || Role.MANAGER) {
-        return true;
-    } 
-    return false;
+  // Fix the logical condition here, using proper OR operator
+  if (role === Role.ADMIN || role === Role.COACH || role === Role.MANAGER) {
+    return true;
+  } 
+  return false;
 }
 
-// total transcripts count - take the orgId, if the user is manager/admin/coach in the org then send the count of all the transcripts in the org if sales rep then send the count of transcript uploaded by him in the org
+// total transcripts count
 dashboardRouter.get('/transcriptsCount', async (req: Request, res: Response) => {
   try {
     // @ts-ignore
     const userId = req.user?.id;
-    const orgId = req.query.orgId as string;
     
-    if (!userId || !orgId) {
-      res.status(400).json({ error: 'Missing userId or orgId' });
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
     }
-
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+    }
+    
+    const { orgId } = validation.data!;
+    
     const userRole = await getUserOrgRole(userId, orgId);
     
     if (!userRole) {
@@ -66,21 +103,31 @@ dashboardRouter.get('/transcriptsCount', async (req: Request, res: Response) => 
   }
 });
 
-// average sentiment percentage - take the orgId from params, if the user is sales-rep send the average sentiment of the calls uploaded by him in the org in percentage else send average sentiment of all the calls
+// average sentiment percentage
 dashboardRouter.get('/averageSentiment', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
     const userId = req.user?.id;
-    const orgId = req.query.orgId as string;
     
-    if (!userId || !orgId) {
-      res.status(400).json({ error: 'Missing userId or orgId' });
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
     }
-
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
     const userRole = await getUserOrgRole(userId, orgId);
     
     if (!userRole) {
       res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
     }
 
     let whereClause = {};
@@ -109,8 +156,8 @@ dashboardRouter.get('/averageSentiment', async (req: Request, res: Response): Pr
     });
 
     if (analyses.length === 0) {
-        res.json({ averageSentiment: 0 });
-        return;
+      res.json({ averageSentiment: 0 });
+      return;
     }
 
     const sum = analyses.reduce((acc, analysis) => acc + analysis.overallSentiment, 0);
@@ -119,28 +166,38 @@ dashboardRouter.get('/averageSentiment', async (req: Request, res: Response): Pr
     // Convert to percentage (assuming sentiment is on a scale of -1 to 1)
     const percentage = ((average + 1) / 2) * 100;
     
-     res.json({ averageSentiment: percentage.toFixed(2) });
+    res.json({ averageSentiment: percentage.toFixed(2) });
   } catch (error) {
     console.error('Error getting average sentiment:', error);
     res.status(500).json({ error: 'Failed to get average sentiment' });
   }
 });
 
-// objections handled count - same logic role based count and number of objections success
+// objections handled count
 dashboardRouter.get('/objectionsHandled', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
     const userId = req.user?.id;
-    const orgId = req.query.orgId as string;
     
-    if (!userId || !orgId) {
-      res.status(400).json({ error: 'Missing userId or orgId' });
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
     }
-
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
     const userRole = await getUserOrgRole(userId, orgId);
     
     if (!userRole) {
       res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
     }
 
     let whereClause = {};
@@ -187,27 +244,35 @@ dashboardRouter.get('/objectionsHandled', async (req: Request, res: Response): P
   }
 });
 
-// talk ratio in percentage - lets do this again as we arent storing the ratio in the db
+// talk ratio in percentage
 dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
     const userId = req.user?.id;
-    const orgId = req.query.orgId as string;
     
-    if (!userId || !orgId) {
-     res.status(400).json({ error: 'Missing userId or orgId' });
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
     }
-
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
     const userRole = await getUserOrgRole(userId, orgId);
     
     if (!userRole) {
-     res.status(403).json({ error: 'User does not belong to this organization' });
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
     }
 
     // Since we're not storing talk ratio, we'll calculate it based on available data
-    // This is a placeholder implementation - you'll need to replace this with your actual logic
     
-    // Example: Calculate based on call duration and number of participants
     let whereClause = {};
     if (canAccessAllOrgData(userRole as Role)) {
       whereClause = {
@@ -238,7 +303,6 @@ dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<v
     
     if (analyses.length > 0) {
       // Here you would implement your actual talk ratio calculation
-      // For now, we're using a placeholder value
       avgTalkRatio = 50;
     }
     
@@ -249,22 +313,31 @@ dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<v
   }
 });
 
-// sentiment trends - same role based logic and orgid from query applicable and this give the data of the last 10 calls
-// the data is a array of length 10 with object looks like {name: "name of the call", positive: "overall positive of the call", negative: "overall negative of the call", neutral: "over neutral of the call"} all in percentage
+// sentiment trends
 dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
     const userId = req.user?.id;
-    const orgId = req.query.orgId as string;
     
-    if (!userId || !orgId) {
-        res.status(400).json({ error: 'Missing userId or orgId' });
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
     }
-
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
     const userRole = await getUserOrgRole(userId, orgId);
     
     if (!userRole) {
-        res.status(403).json({ error: 'User does not belong to this organization' });
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
     }
 
     let whereClause = {};
@@ -301,7 +374,6 @@ dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Pro
 
     const trends = analyses.map(analysis => {
       // Calculate positive, negative, neutral percentages from overall sentiment
-      // Assuming sentiment range from -1 to 1
       const overallSentiment = analysis.overallSentiment;
       
       // Simplified calculation - replace with your actual formula
@@ -324,30 +396,45 @@ dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Pro
   }
 });
 
-// common objections - keep this hanging lets do this again
+// common objections - placeholder
 dashboardRouter.get('/commonObjections', async (req: Request, res: Response) => {
   // Placeholder for future implementation
   res.status(501).json({ message: "This endpoint is not yet implemented" });
 });
 
-// transcripts - same role based logic applies, paginated, returns call assets with the analysis 
+// transcripts - paginated with role-based logic
 dashboardRouter.get('/transcripts', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
     const userId = req.user?.id;
-    const orgId = req.query.orgId as string;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    
+    // Validate orgId and pagination parameters
+    const orgValidation = validateQuery(orgIdSchema, req);
+    if (!orgValidation.success) {
+      res.status(400).json({ error: orgValidation.error });
+      return;
+    }
+    
+    const paginationValidation = validateQuery(paginationSchema, req);
+    if (!paginationValidation.success) {
+      res.status(400).json({ error: paginationValidation.error });
+      return;
+    }
+    
+    const { orgId } = orgValidation.data!;
+    const { page, limit } = paginationValidation.data!;
     const skip = (page - 1) * limit;
     
-    if (!userId || !orgId) {
-        res.status(400).json({ error: 'Missing userId or orgId' });
-    }
-
     const userRole = await getUserOrgRole(userId, orgId);
     
     if (!userRole) {
-        res.status(403).json({ error: 'User does not belong to this organization' });
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
     }
 
     let whereClause = {};
