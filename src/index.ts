@@ -16,19 +16,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Replace your current CORS setup with this:
-app.use(
-  cors({
-    origin: ["https://ai-transcript-fe.vercel.app", "http://localhost:3000"], // Add your frontend URLs
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-    credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-  })
-);
-
-// Add this to handle OPTIONS requests explicitly
-app.options('*', cors());
+app.use(cors());
 
 // Use the routes
 app.use("/api", routes);
