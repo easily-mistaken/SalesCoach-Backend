@@ -1,8 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { Router, Request, Response } from "express";
 import { authMiddleware } from "../middleware/auth";
-import { connect } from "http2";
-// import { sendInviteEmail } from "../services/emailService"; // We'll ignore email service for now
+import { sendInviteEmail } from "../services/emailService";
 
 const prisma = new PrismaClient();
 const inviteRouter = Router();
@@ -25,6 +24,12 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
             name: true,
           },
         },
+        invitedByUser: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
       },
     });
 
@@ -33,7 +38,24 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    res.json(invite);
+    // Check if invite has expired (older than 7 days)
+    const expirationDate = new Date(invite.timestamp);
+    expirationDate.setDate(expirationDate.getDate() + 7); // Add 7 days
+    if (expirationDate < new Date()) {
+      res.status(410).json({ error: "Invite has expired" });
+      return;
+    }
+
+    // Format the response with inviter details
+    const response = {
+      ...invite,
+      inviterName: invite.invitedByUser
+        ? `${invite.invitedByUser.firstName} ${invite.invitedByUser.lastName}`
+        : null,
+      inviterRole: "Team Member", // You might want to fetch the actual role if available
+    };
+
+    res.json(response);
   } catch (error) {
     console.error("Error fetching invite:", error);
     res.status(500).json({ error: "Failed to fetch invite details" });
@@ -41,10 +63,9 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 });
 
 // Create a new invitation
-// TODO: strict validation of role and organisation and team access
 inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, teamIds, role, organizationId } = req.body; // Changed 'teams' to 'teamIds' to match the schema
+    const { email, teamIds, role, organizationId } = req.body;
     // @ts-ignore
     const user = req.user;
 
@@ -56,15 +77,32 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
           organizationId: organizationId,
         },
       },
+      include: {
+        organization: {
+          select: {
+            name: true,
+          },
+        },
+        user: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
     });
 
     if (!userOrg) {
-      res.status(403).json({ error: "User does not belong to the organization" });
+      res
+        .status(403)
+        .json({ error: "User does not belong to the organization" });
+      return;
     }
 
     // Check if the user's role is either ADMIN or MANAGER
     if (userOrg?.role !== "ADMIN" && userOrg?.role !== "MANAGER") {
       res.status(403).json({ error: "Not enough permissions" });
+      return;
     }
 
     const invite = await prisma.invite.create({
@@ -74,70 +112,94 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
         invitedBy: user.id,
         organizationId: organizationId,
         teams: {
-          // @ts-ignore
-          create: teamIds.map(teamId => ({
+          create: teamIds.map((teamId: string) => ({
             team: {
-              connect: {id: teamId}
-            }
-          }))
-        }, // Added teamIds to the invite creation
+              connect: { id: teamId },
+            },
+          })),
+        },
       },
     });
 
-    console.log("Invite created:", invite);
-    // TODO: send email to the invited user
+    // Send the invitation email
+    try {
+      const inviterName = `${userOrg.user.firstName} ${userOrg.user.lastName}`;
+      await sendInviteEmail({
+        email,
+        inviteId: invite.id,
+        organizationName: userOrg.organization.name,
+        inviterName,
+        inviterRole: userOrg.role,
+      });
 
-    res.status(201).json({ message: "Invite sent" });
+      res
+        .status(201)
+        .json({ message: "Invite sent successfully", inviteId: invite.id });
+    } catch (emailError) {
+      console.error("Failed to send invitation email:", emailError);
+      // Even if email fails, the invite is created in the DB
+      res.status(201).json({
+        message: "Invite created but email delivery failed",
+        inviteId: invite.id,
+        emailError: true,
+      });
+    }
   } catch (error) {
     console.error("Error creating invite:", error);
     res.status(500).json({ error: "Failed to create invite" });
   }
 });
 
-inviteRouter.post("/accept", authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  const { inviteId } = req.body; // Get the invite ID from the request body
-  // @ts-ignore
-  const userId = req.user?.id;
+inviteRouter.post(
+  "/accept",
+  authMiddleware,
+  async (req: Request, res: Response): Promise<void> => {
+    const { inviteId } = req.body; // Get the invite ID from the request body
+    // @ts-ignore
+    const userId = req.user?.id;
 
-  if (!inviteId || !userId) {
-    res.status(400).json({ error: "Invite ID and user ID are required" });
-    return;
-  }
-
-  try {
-    // Fetch the invite to check its validity
-    const invite = await prisma.invite.findUnique({
-      where: { id: inviteId },
-      include: {
-        organization: true,
-      },
-    });
-
-    if (!invite) {
-      res.status(404).json({ error: "Invite not found" });
+    if (!inviteId || !userId) {
+      res.status(400).json({ error: "Invite ID and user ID are required" });
       return;
     }
 
-    // Add the user to the organization
-    await prisma.userOrganization.create({
-      data: {
-        userId: userId,
-        organizationId: invite.organizationId,
-        role: invite.role,
-      },
-    });
+    try {
+      // Fetch the invite to check its validity
+      const invite = await prisma.invite.findUnique({
+        where: { id: inviteId },
+        include: {
+          organization: true,
+        },
+      });
 
-    // Optionally, update the invite status to SUCCESS
-    await prisma.invite.update({
-      where: { id: inviteId },
-      data: { status: "SUCCESS" },
-    });
+      if (!invite) {
+        res.status(404).json({ error: "Invite not found" });
+        return;
+      }
 
-    res.status(200).json({ message: "Invite accepted and user added to organization" });
-  } catch (error) {
-    console.error("Error accepting invite:", error);
-    res.status(500).json({ error: "Failed to accept invite" });
+      // Add the user to the organization
+      await prisma.userOrganization.create({
+        data: {
+          userId: userId,
+          organizationId: invite.organizationId,
+          role: invite.role,
+        },
+      });
+
+      // Optionally, update the invite status to SUCCESS
+      await prisma.invite.update({
+        where: { id: inviteId },
+        data: { status: "SUCCESS" },
+      });
+
+      res
+        .status(200)
+        .json({ message: "Invite accepted and user added to organization" });
+    } catch (error) {
+      console.error("Error accepting invite:", error);
+      res.status(500).json({ error: "Failed to accept invite" });
+    }
   }
-});
+);
 
 export default inviteRouter;
