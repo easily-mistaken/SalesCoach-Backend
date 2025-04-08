@@ -10,17 +10,29 @@ export const authMiddleware = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
-  // Fetch both token cookies
-
   try {
-    const token = req.headers.authorization?.split(" ")[1];
-    console.log("token", token);
+    // Extract token from Authorization header
+    const authHeader = req.headers.authorization;
+    console.log(
+      "Authorization header:",
+      authHeader ? `${authHeader.substring(0, 20)}...` : "undefined"
+    );
+
+    const token = authHeader?.split(" ")[1];
 
     if (!token) {
-      console.log("no token");
-      res.status(401).json({ message: "Unauthorized" });
+      console.log("No token found in Authorization header");
+      res.status(401).json({ message: "Unauthorized - No token provided" });
       return;
     }
+
+    console.log("Token first 20 chars:", `${token.substring(0, 20)}...`);
+    console.log(
+      "JWT_SECRET first 10 chars:",
+      process.env.JWT_SECRET
+        ? `${process.env.JWT_SECRET.substring(0, 10)}...`
+        : "undefined"
+    );
 
     // Verify the access token
     jwt.verify(
@@ -28,45 +40,76 @@ export const authMiddleware = async (
       process.env.JWT_SECRET as string,
       async (err: any, decoded: any) => {
         if (err) {
-          res.status(401).json({ message: "Unauthorized" });
-          console.log("invalid token");
+          console.log("JWT verification error type:", err.name);
+          console.log("JWT verification error message:", err.message);
+          res.status(401).json({ message: "Unauthorized - Invalid token" });
           return;
         }
 
-        console.log("decoded", decoded);
+        console.log("JWT verification successful");
+        console.log("Decoded token:", JSON.stringify(decoded, null, 2));
+
+        // Check what user ID field exists in the decoded token
+        const userId = decoded.sub || decoded.user_id || decoded.id;
+        console.log("Extracted user ID:", userId);
+
+        if (!userId) {
+          console.log("No user ID found in decoded token");
+          res
+            .status(401)
+            .json({ message: "Unauthorized - No user ID in token" });
+          return;
+        }
+
+        // Log a few users from the database for comparison
+        try {
+          const sampleUsers = await prisma.user.findMany({
+            select: { id: true, email: true },
+            take: 3,
+          });
+          console.log("Sample users in database:", sampleUsers);
+        } catch (dbError) {
+          console.log("Error fetching sample users:", dbError);
+        }
 
         // Fetch user from the database using Prisma
-        const user = await prisma.user.findUnique({
-          where: { id: decoded.sub },
-          include: {
-            organizations: {
-              include: {
-                organization: {
-                  include: {
-                    callAssets: true,
+        try {
+          const user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+              organizations: {
+                include: {
+                  organization: {
+                    include: {
+                      callAssets: true,
+                    },
                   },
+                  teamAccess: true,
                 },
-                teamAccess: true,
               },
             },
-          },
-        });
+          });
 
-        if (!user) {
-          res.status(401).json({ message: "Unauthorized" });
-          console.log("no user");
+          if (!user) {
+            console.log(`No user found with ID: ${userId}`);
+            res.status(401).json({ message: "Unauthorized - User not found" });
+            return;
+          }
+
+          console.log(`Found user: ${user.email}`);
+
+          // @ts-ignore
+          req.user = user;
+          next();
+        } catch (userError) {
+          console.log("Error fetching user from database:", userError);
+          res.status(500).json({ message: "Server error fetching user" });
           return;
         }
-
-        console.log("user", user);
-
-        // @ts-ignore
-        req.user = user;
-        next();
       }
     );
   } catch (error) {
-    console.log("Error parsing token:", error);
+    console.log("Error in auth middleware:", error);
     res.status(500).json({ message: "Internal server error" });
     return;
   }
