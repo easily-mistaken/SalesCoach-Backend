@@ -103,7 +103,7 @@ async function loadRemotePDF(pdfUrl: string): Promise<string> {
     const chunks = await textSplitter.createDocuments([fullText]);
     return chunks.map(chunk => chunk.pageContent).join("\n");
   } catch (error) {
-    console.error("Error loading remote transcript:", error);
+    console.error("Error loading remote transcript:");
     throw error;
   }
 }
