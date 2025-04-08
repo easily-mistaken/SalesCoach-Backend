@@ -16,14 +16,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 // CORS configuration
-app.use(
-  cors({
-    origin: "https://prajjwal.site", // Your frontend domain
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+app.use(cors());
 
 // Use the routes
 app.use("/api", routes);
