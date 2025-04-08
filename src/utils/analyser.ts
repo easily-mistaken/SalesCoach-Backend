@@ -34,6 +34,14 @@ const Objection = z.object({
   success: z.boolean().describe("Whether the objection was successfully addressed (true if effectiveness > 0.6)")
 });
 
+// Adding talk ratio to the schema
+const ParticipantTalkStats = z.object({
+  name: z.string().describe("Name of the participant"),
+  role: z.string().describe("Role of the participant (e.g., 'Sales Rep', 'Prospect')"),
+  wordCount: z.number().describe("Number of words spoken by this participant"),
+  percentage: z.number().min(0).max(100).describe("Percentage of total words spoken by this participant")
+});
+
 const TranscriptAnalysis = z.object({
   id: z.string().describe("Unique identifier for this transcript analysis"),
   title: z.string().describe("Descriptive title of the call based on content"),
@@ -45,6 +53,11 @@ const TranscriptAnalysis = z.object({
     overall: z.number().min(0).max(1).describe("Overall sentiment score for the entire call"),
     timeline: z.array(SentimentPoint).describe("Sentiment scores at regular intervals throughout the call")
   }),
+  // Add talk ratio analysis
+  talkRatio: z.object({
+    salesRepPercentage: z.number().min(0).max(100).describe("Percentage of the conversation where the sales rep was talking"),
+    participantStats: z.array(ParticipantTalkStats).describe("Detailed statistics about each participant's talking time")
+  }).describe("Analysis of who talked how much during the call"),
   objections: z.array(Objection).describe("List of objections raised and responses given"),
   keyInsights: z.array(z.string()).describe("3-5 key insights about prospect interests, concerns, and decision-making"),
   recommendations: z.array(z.string()).describe("3-5 actionable recommendations for the sales rep")
@@ -177,11 +190,16 @@ async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisRe
     1. Extract basic information like title, date, participants, and duration from the transcript
     2. Create a concise summary of the call in one paragraph
     3. Analyze sentiment throughout the call, providing an overall score and timeline of scores
-    4. Identify all objections raised by the prospect and the sales rep's responses
-    5. For each objection, categorize it into one of these types: PRICE, TIMING, TRUST_RISK, COMPETITION, STAKEHOLDERS, or OTHERS
-    6. For each objection, determine if it was successfully addressed (true if effectiveness > 0.6, false otherwise)
-    7. Provide 3-5 key insights about the prospect's interests and concerns
-    8. Suggest 3-5 actionable recommendations for the sales rep
+    4. Calculate the talk ratio (percentage of time each person speaks) 
+       - For each speaker, count how many words they speak
+       - Calculate what percentage of the total word count each person contributes
+       - Identify which participant is the sales rep
+       - Calculate the sales rep's talking percentage
+    5. Identify all objections raised by the prospect and the sales rep's responses
+    6. For each objection, categorize it into one of these types: PRICE, TIMING, TRUST_RISK, COMPETITION, STAKEHOLDERS, or OTHERS
+    7. For each objection, determine if it was successfully addressed (true if effectiveness > 0.6, false otherwise)
+    8. Provide 3-5 key insights about the prospect's interests and concerns
+    9. Suggest 3-5 actionable recommendations for the sales rep
     
     For the ID field, generate a unique identifier with format "tr-" followed by 6 random digits.
     
@@ -207,9 +225,13 @@ async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisRe
         type: objection.type || determineObjectionType(objection.text),
         // Use the model's success value if provided, otherwise calculate from effectiveness
         success: typeof objection.success === 'boolean' ? objection.success : objection.effectiveness > 0.6
-      }))
+      })),
+      // Ensure talk ratio data exists and is properly formatted
+      talkRatio: result.talkRatio || {
+        salesRepPercentage: calculateDefaultTalkRatio(transcriptText, result.participants),
+        participantStats: []
+      }
     };
-
 
     // Create complete result object
     const analysisResult: AnalysisResult = {
@@ -219,16 +241,50 @@ async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisRe
     // Output to console and save to file
     console.log("Analysis complete!");
 
-    // Save both the data and token usage
-    // const timestamp = Date.now();
-    // const outputFilename = `transcript_analysis_${timestamp}.json`;
-    // fs.writeFileSync(outputFilename, JSON.stringify(analysisResult, null, 2));
-    // console.log(`Analysis saved to ${outputFilename}`);
-
     return analysisResult;
   } catch (error) {
     console.log("Error in analysis:", error);
     throw error;
+  }
+}
+
+/**
+ * Fallback function to calculate a basic talk ratio if the LLM doesn't provide one.
+ * This is a simplified version that assumes the first participant is the sales rep.
+ */
+function calculateDefaultTalkRatio(transcript: string, participants: string[]): number {
+  // This is a fallback function with a simplified approach
+  // In a real implementation, you'd need to parse the transcript more accurately
+  // to determine who is speaking when
+  
+  try {
+    if (!transcript || !participants || participants.length === 0) {
+      return 50; // Default to 50% if we can't calculate
+    }
+    
+    // Simple heuristic: assume first participant is sales rep
+    const salesRepName = participants[0].split(' ')[0]; // Get first name
+    
+    // Count words in transcript
+    const words = transcript.split(/\s+/);
+    let salesRepWordCount = 0;
+    let totalWordCount = words.length;
+    
+    // Very basic heuristic: count words that appear after the sales rep's name followed by ":"
+    const lines = transcript.split('\n');
+    for (const line of lines) {
+      if (line.toLowerCase().startsWith(salesRepName.toLowerCase())) {
+        // Count words in this line (approximately)
+        const lineWords = line.split(/\s+/).length;
+        salesRepWordCount += lineWords;
+      }
+    }
+    
+    // Calculate percentage (with safeguard against division by zero)
+    return totalWordCount > 0 ? (salesRepWordCount / totalWordCount) * 100 : 50;
+  } catch (error) {
+    console.error("Error calculating default talk ratio:", error);
+    return 50; // Default value on error
   }
 }
 

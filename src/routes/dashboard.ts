@@ -271,16 +271,17 @@ dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<v
       return;
     }
 
-    // Since we're not storing talk ratio, we'll calculate it based on available data
-    
+    // Build the where clause based on user role
     let whereClause = {};
     if (canAccessAllOrgData(userRole as Role)) {
+      // For admin/manager/coach - calculate average talk ratio for all calls in the org
       whereClause = {
         callAsset: {
           organizationId: orgId
         }
       };
     } else {
+      // For sales rep - only calculate average talk ratio for their own calls in the org
       whereClause = {
         callAsset: {
           userId,
@@ -289,29 +290,37 @@ dashboardRouter.get('/talkRatio', async (req: Request, res: Response): Promise<v
       };
     }
 
+    // Fetch analyses with salesRepTalkRatio
     const analyses = await prisma.analysis.findMany({
       where: whereClause,
       select: {
-        participants: true,
-        duration: true
+        salesRepTalkRatio: true
       }
     });
 
-    // Placeholder calculation - replace with your actual logic
-    // This assumes the first participant is always the sales rep
+    // Calculate the average talk ratio
     let avgTalkRatio = 50; // Default to 50%
     
     if (analyses.length > 0) {
-      // Here you would implement your actual talk ratio calculation
-      avgTalkRatio = 50;
+      // Sum up all talk ratios and divide by the number of analyses
+      const sum = analyses.reduce((acc, analysis) => {
+        // Use the salesRepTalkRatio field if it exists, otherwise use 50 as default
+        return acc + (analysis.salesRepTalkRatio ?? 50);
+      }, 0);
+      
+      avgTalkRatio = sum / analyses.length;
     }
     
-    res.json({ talkRatio: avgTalkRatio });
+    // Return the result
+    res.json({ 
+      talkRatio: parseFloat(avgTalkRatio.toFixed(2)),
+      callsAnalyzed: analyses.length
+    });
   } catch (error) {
     console.error('Error calculating talk ratio:', error);
     res.status(500).json({ error: 'Failed to calculate talk ratio' });
   }
-});
+});;
 
 // sentiment trends
 dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Promise<void> => {

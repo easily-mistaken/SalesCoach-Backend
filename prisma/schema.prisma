@@ -107,7 +107,23 @@ model Analysis {
   callAssetId    String       @unique @db.Uuid  // Foreign key to CallAsset
   callAsset      CallAsset    @relation(fields: [callAssetId], references: [id], onDelete: Cascade)
   objections     Objection[]  // One-to-many relation with Objection
-  sentimentEntries  SentimentEntry[] 
+  sentimentEntries  SentimentEntry[]
+  // Add talk ratio fields
+  salesRepTalkRatio Float     // Percentage of time the sales rep speaks
+  participantTalkStats ParticipantTalkStat[] // Detailed talking stats for each participant
+}
+
+// New model for participant talk statistics
+model ParticipantTalkStat {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   // Name of the participant
+  role       String   // Role (e.g., "Sales Rep", "Prospect")
+  wordCount  Int      // Number of words spoken
+  percentage Float    // Percentage of total conversation
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  analysisId String   @db.Uuid
+  analysis   Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 }
 
 model Objection {

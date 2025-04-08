@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, CallAssetType } from '@prisma/client';
 import { getTextFromPdf, analyzeCallTranscript } from '../utils/analyser';
+import { z } from 'zod';
 
 // Initialize Prisma with extended timeout settings
 const prisma = new PrismaClient({
@@ -15,6 +16,31 @@ const prisma = new PrismaClient({
 });
 
 const assetsRouter = Router();
+
+// Input validation schemas
+const createAssetSchema = z.object({
+  content: z.string().min(1, "Content is required"),
+  type: z.enum(["FILE", "TEXT"]),
+  organizationId: z.string().uuid().optional(),
+  name: z.string().optional()
+});
+
+// Helper function to validate request body
+function validateBody<T extends z.ZodTypeAny>(
+  schema: T,
+  req: Request
+): { success: boolean; data?: z.infer<T>; error?: string } {
+  try {
+    const result = schema.parse(req.body);
+    return { success: true, data: result };
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const errorMessages = error.errors.map(err => `${err.path}: ${err.message}`).join(', ');
+      return { success: false, error: errorMessages };
+    }
+    return { success: false, error: 'Invalid input parameters' };
+  }
+}
 
 // Helper function to retry a function with exponential backoff
 async function retryWithBackoff(fn: any, maxRetries = 3, initialDelay = 1000) {
@@ -40,14 +66,28 @@ async function retryWithBackoff(fn: any, maxRetries = 3, initialDelay = 1000) {
 assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     try {
         // @ts-ignore
-        const userId = req.user.id;
-        const { content, type, organizationId } = req.body;
-
+        const userId = req.user?.id;
+        
+        if (!userId) {
+            res.status(401).json({ error: 'User authentication required' });
+            return;
+        }
+        
+        // Validate request body
+        const validation = validateBody(createAssetSchema, req);
+        if (!validation.success) {
+            res.status(400).json({ error: validation.error });
+            return;
+        }
+        
+        const { content, type, organizationId, name } = validation.data!;
+        
         // Step 1: Create the asset
         const asset = await prisma.callAsset.create({
             data: { 
                 content,
-                type,
+                type: type as CallAssetType,
+                name,
                 user: {
                     connect: {
                         id: userId
@@ -63,7 +103,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 })
             },
         });
-
+        
         // Step 2: Extract and analyze the text
         let text;
         try {
@@ -94,6 +134,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                         keyInsights: data.keyInsights,
                         recommendations: data.recommendations,
                         callAssetId: asset.id,
+                        salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
                     },
                 });
                 
@@ -113,7 +154,25 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 await Promise.all(sentimentPromises);
                 console.log("Created sentiment entries");
                 
-                // Step 5: Create objections in batches
+                // Step 5: Create participant talk stats in batches
+                if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
+                    const talkStatPromises = data.talkRatio.participantStats.map(stat => 
+                        prisma.participantTalkStat.create({
+                            data: {
+                                name: stat.name,
+                                role: stat.role,
+                                wordCount: stat.wordCount,
+                                percentage: stat.percentage,
+                                analysisId: analysisRecord.id,
+                            }
+                        })
+                    );
+                    
+                    await Promise.all(talkStatPromises);
+                    console.log("Created participant talk stats");
+                }
+                
+                // Step 6: Create objections in batches
                 const objectionPromises = data.objections.map(obj => 
                     prisma.objection.create({
                         data: {
@@ -131,18 +190,19 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 await Promise.all(objectionPromises);
                 console.log("Created objection entries");
                 
-                // Step 6: Update the asset status
+                // Step 7: Update the asset status
                 await prisma.callAsset.update({
                     where: { id: asset.id },
                     data: { status: "SUCCESS" }
                 });
                 
-                // Step 7: Fetch the complete analysis with relations
+                // Step 8: Fetch the complete analysis with relations
                 return prisma.analysis.findUnique({
                     where: { id: analysisRecord.id },
                     include: {
                         sentimentEntries: true,
-                        objections: true
+                        objections: true,
+                        participantTalkStats: true
                     }
                 });
             });
@@ -188,24 +248,132 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
+// Define query parameters schema for pagination
+const getAssetsQuerySchema = z.object({
+    limit: z.coerce.number().positive().default(10),
+    page: z.coerce.number().positive().default(1),
+    organizationId: z.string().uuid().optional()
+});
+
 // get assets of a user
 assetsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
-    // @ts-ignore
-    const userId = req.user.id;
-
-    const assets = await prisma.callAsset.findMany({
-        where: { userId },
-        include: {
-            analysis: {
+    try {
+        // @ts-ignore
+        const userId = req.user?.id;
+        
+        if (!userId) {
+            res.status(401).json({ error: 'User authentication required' });
+            return;
+        }
+        
+        // Validate query parameters
+        const queryValidation = z.object({
+            limit: z.coerce.number().positive().default(10),
+            page: z.coerce.number().positive().default(1),
+            organizationId: z.string().uuid().optional()
+        }).safeParse(req.query);
+        
+        if (!queryValidation.success) {
+            res.status(400).json({ error: 'Invalid query parameters' });
+            return;
+        }
+        
+        const { limit, page, organizationId } = queryValidation.data;
+        const skip = (page - 1) * limit;
+        
+        // Build the where clause based on parameters
+        const whereClause: any = { userId };
+        if (organizationId) {
+            whereClause.organizationId = organizationId;
+        }
+        
+        // Get assets with pagination
+        const [assets, total] = await Promise.all([
+            prisma.callAsset.findMany({
+                where: whereClause,
                 include: {
-                    sentimentEntries: true,
-                    objections: true
+                    analysis: {
+                        include: {
+                            sentimentEntries: true,
+                            objections: true,
+                            participantTalkStats: true
+                        }
+                    }
+                },
+                skip,
+                take: limit,
+                orderBy: { createdAt: 'desc' }
+            }),
+            prisma.callAsset.count({ where: whereClause })
+        ]);
+        
+        res.status(200).json({ 
+            assets,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            }
+        });
+    } catch (error) {
+        console.error("Error fetching assets:", error);
+        res.status(500).json({ 
+            message: 'Failed to fetch assets',
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
+});
+
+// Get a single asset by ID
+assetsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.id;
+        
+        if (!userId) {
+            res.status(401).json({ error: 'User authentication required' });
+            return;
+        }
+        
+        const assetId = req.params.id;
+        
+        // Validate asset ID
+        if (!assetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assetId)) {
+            res.status(400).json({ error: 'Invalid asset ID format' });
+            return;
+        }
+        
+        // Get the asset with its analysis
+        const asset = await prisma.callAsset.findFirst({
+            where: { 
+                id: assetId,
+                userId // Ensure the asset belongs to the requesting user
+            },
+            include: {
+                analysis: {
+                    include: {
+                        sentimentEntries: true,
+                        objections: true,
+                        participantTalkStats: true
+                    }
                 }
             }
+        });
+        
+        if (!asset) {
+            res.status(404).json({ error: 'Asset not found' });
+            return;
         }
-    });
-
-    res.status(200).json({ assets });
+        
+        res.status(200).json({ asset });
+    } catch (error) {
+        console.error("Error fetching asset:", error);
+        res.status(500).json({ 
+            message: 'Failed to fetch asset',
+            error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+    }
 });
 
 export default assetsRouter;
