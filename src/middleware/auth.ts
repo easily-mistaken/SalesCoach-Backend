@@ -14,6 +14,7 @@ export const authMiddleware = async (
 
   try {
     const token = req.headers.authorization?.split(" ")[1];
+    console.log("token", token);
 
     if (!token) {
       console.log("no token");
@@ -31,6 +32,8 @@ export const authMiddleware = async (
           console.log("invalid token");
           return;
         }
+
+        console.log("decoded", decoded);
 
         // Fetch user from the database using Prisma
         const user = await prisma.user.findUnique({
@@ -54,6 +57,8 @@ export const authMiddleware = async (
           console.log("no user");
           return;
         }
+
+        console.log("user", user);
 
         // @ts-ignore
         req.user = user;
