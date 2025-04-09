@@ -1,9 +1,8 @@
-import { PrismaClient } from "@prisma/client";
 import { Router, Request, Response } from "express";
 import { authMiddleware } from "../middleware/auth";
 import { sendInviteEmail } from "../services/emailService";
+import { prisma } from "../utils/prisma";
 
-const prisma = new PrismaClient();
 const inviteRouter = Router();
 
 // Get invitation details
