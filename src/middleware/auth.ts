@@ -46,9 +46,13 @@ export const authMiddleware = async (
                   organization: {
                     include: {
                       callAssets: true,
-                    },
+                    }
                   },
-                  teamAccess: true,
+                  teamAccess: {
+                    include: {
+                      team: true
+                    }
+                  },
                 },
               },
             },
@@ -63,12 +67,14 @@ export const authMiddleware = async (
           req.user = user;
           next();
         } catch (userError) {
+          console.log(userError)
           res.status(500).json({ message: "Internal server error" });
           return;
         }
       }
     );
   } catch (error) {
+    console.log(error)
     res.status(500).json({ message: "Internal server error" });
     return;
   }
