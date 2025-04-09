@@ -1,19 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient, CallAssetType } from '@prisma/client';
+import {  CallAssetType } from '@prisma/client';
 import { getTextFromPdf, analyzeCallTranscript } from '../utils/analyser';
 import { z } from 'zod';
-
-// Initialize Prisma with extended timeout settings
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      // If using connection URLs, you can add connection_limit and pool_timeout params
-      url: process.env.DATABASE_URL, 
-    },
-  },
-  // Add longer timeout for transactions
-  log: ['query', 'info', 'warn', 'error'],
-});
+import {prisma} from '../utils/prisma';
 
 const assetsRouter = Router();
 
