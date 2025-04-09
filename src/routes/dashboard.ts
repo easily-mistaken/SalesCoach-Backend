@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient, Role } from '@prisma/client';
+import { Role } from '@prisma/client';
 import { z } from 'zod'; // Add zod for validation
+import {prisma } from "../utils/prisma";
 
-const prisma = new PrismaClient();
 const dashboardRouter = Router();
 
 // Validation schemas
