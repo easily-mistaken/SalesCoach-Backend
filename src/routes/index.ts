@@ -7,6 +7,7 @@ import inviteRouter from "./invite";
 import assetsRouter from "./assets";
 import dashboardRouter from "./dashboard";
 import { Resend } from "resend";
+import objectionsRouter from "./objections";
 
 const router = Router();
 
@@ -16,6 +17,7 @@ router.use("/team", authMiddleware, teamRouter);
 router.use("/invite", authMiddleware, inviteRouter);
 router.use("/callasset", authMiddleware, assetsRouter);
 router.use("/dashboard", authMiddleware, dashboardRouter);
+router.use("/objections", authMiddleware, objectionsRouter)
 router.post(
   "/test-email",
   async (req: Request, res: Response): Promise<void> => {
@@ -23,8 +25,8 @@ router.post(
     try {
       const resendClient = new Resend(process.env.RESEND_API_KEY);
       const { data, error } = await resendClient.emails.send({
-        from: "SalesCoach <noreply@prajjwal.site>", // Use your verified domain
-        to: ["choubeyprajjwal@gmail.com"], // Replace with your test email
+        from: "SalesCoach <noreply@prajjwal.site>", 
+        to: ["choubeyprajjwal@gmail.com"], 
         subject: "Test Email from SalesCoach",
         html: "<strong>This is a test email from SalesCoach!</strong>",
       });
