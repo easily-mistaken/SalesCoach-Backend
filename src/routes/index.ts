@@ -14,7 +14,7 @@ const router = Router();
 router.use("/organisation", authMiddleware, organisationRouter);
 router.use("/user", authMiddleware, userRouter);
 router.use("/team", authMiddleware, teamRouter);
-router.use("/invite", authMiddleware, inviteRouter);
+router.use("/invite", inviteRouter);
 router.use("/callasset", authMiddleware, assetsRouter);
 router.use("/dashboard", authMiddleware, dashboardRouter);
 router.use("/objections", authMiddleware, objectionsRouter)

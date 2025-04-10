@@ -82,7 +82,7 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 });
 
 // Create a new invitation
-inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
+inviteRouter.post("/", authMiddleware, async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, teamIds, role, organizationId } = req.body;
     // @ts-ignore
@@ -171,6 +171,7 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 
 inviteRouter.post(
   "/accept",
+  authMiddleware,
   async (req: Request, res: Response): Promise<void> => {
     try {
       // Validate request data
