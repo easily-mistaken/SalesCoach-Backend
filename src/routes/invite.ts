@@ -171,7 +171,6 @@ inviteRouter.post("/", async (req: Request, res: Response): Promise<void> => {
 
 inviteRouter.post(
   "/accept",
-  authMiddleware,
   async (req: Request, res: Response): Promise<void> => {
     try {
       // Validate request data
@@ -212,13 +211,13 @@ inviteRouter.post(
         return;
       }
 
-      // Check if invite has expired (older than 7 days)
-      const expirationDate = new Date(invite.timestamp);
-      expirationDate.setDate(expirationDate.getDate() + 7); // Add 7 days
-      if (expirationDate < new Date()) {
-        res.status(410).json({ error: "Invite has expired" });
-        return;
-      }
+      // // Check if invite has expired (older than 7 days)
+      // const expirationDate = new Date(invite.timestamp);
+      // expirationDate.setDate(expirationDate.getDate() + 7); // Add 7 days
+      // if (expirationDate < new Date()) {
+      //   res.status(410).json({ error: "Invite has expired" });
+      //   return;
+      // }
 
       // Start a transaction to ensure data consistency
       await prisma.$transaction(async (tx) => {
