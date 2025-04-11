@@ -60,4 +60,43 @@ organisationRouter.post('/', async (req: Request, res: Response): Promise<void> 
     }
 });
 
+organisationRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.id;
+        const organizationId = req.params.id;
+
+        if (!userId) {
+            res.status(401).json({ message: 'User authentication required' });
+            return;
+        }
+
+        if (!organizationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(organizationId)) {
+            res.status(400).json({ message: 'Invalid organization ID format' });
+            return;
+        }
+
+        // Check if user is a part of this organization
+        const userOrg = await prisma.userOrganization.findFirst({
+            where: {
+                userId,
+                organizationId
+            },
+            include: {
+                organization: true
+            }
+        });
+
+        if (!userOrg) {
+            res.status(404).json({ message: 'Organization not found or access denied' });
+            return;
+        }
+
+        res.status(200).json({ organization: userOrg.organization });
+    } catch (error) {
+        console.error('Error fetching organization:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 export default organisationRouter;

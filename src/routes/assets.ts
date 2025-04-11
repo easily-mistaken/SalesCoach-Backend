@@ -368,4 +368,55 @@ assetsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
+// Delete an asset by ID
+assetsRouter.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+    try {
+        // @ts-ignore
+        const userId = req.user?.id;
+
+        if (!userId) {
+            res.status(401).json({ error: 'User authentication required' });
+            return;
+        }
+
+        const assetId = req.params.id;
+
+        // Validate UUID format
+        if (!assetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assetId)) {
+            res.status(400).json({ error: 'Invalid asset ID format' });
+            return;
+        }
+
+        // Ensure the asset belongs to the authenticated user
+        const asset = await prisma.callAsset.findFirst({
+            where: {
+                id: assetId,
+                userId
+            },
+            include: {
+                analysis: true
+            }
+        });
+
+        if (!asset) {
+            res.status(404).json({ error: 'Asset not found or not authorized to delete' });
+            return;
+        }
+
+        // Deleting related analysis and its nested data is handled by cascade rules in the Prisma schema
+        await prisma.callAsset.delete({
+            where: { id: assetId }
+        });
+
+        res.status(200).json({ message: 'Asset deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting asset:', error);
+        res.status(500).json({
+            message: 'Failed to delete asset',
+            error: error instanceof Error ? error.message : 'Unknown error'
+        });
+    }
+});
+
+
 export default assetsRouter;

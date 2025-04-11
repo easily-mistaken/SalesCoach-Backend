@@ -496,4 +496,347 @@ dashboardRouter.get('/transcripts', async (req: Request, res: Response): Promise
   }
 });
 
+// NEW ENDPOINT: questions rate
+dashboardRouter.get('/questionsRate', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // @ts-ignore
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
+    const userRole = await getUserOrgRole(userId, orgId);
+    
+    if (!userRole) {
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
+    }
+
+    let whereClause = {};
+    if (canAccessAllOrgData(userRole as Role)) {
+      // For admin/manager/coach - get data for all call assets in the org
+      whereClause = {
+        callAsset: {
+          organizationId: orgId
+        }
+      };
+    } else {
+      // For sales rep - only get data for their own call assets in the org
+      whereClause = {
+        callAsset: {
+          userId,
+          organizationId: orgId
+        }
+      };
+    }
+
+    const analyses = await prisma.analysis.findMany({
+      where: whereClause,
+      select: {
+        questionsRate: true,
+        totalQuestions: true,
+        duration: true
+      }
+    });
+
+    if (analyses.length === 0) {
+      res.json({ 
+        averageQuestionsRate: 0,
+        averageQuestionsPerCall: 0,
+        totalCalls: 0 
+      });
+      return;
+    }
+
+    // Calculate average questions rate
+    const sumQuestionsRate = analyses.reduce((acc, analysis) => acc + (analysis.questionsRate || 0), 0);
+    const avgQuestionsRate = sumQuestionsRate / analyses.length;
+    
+    // Calculate average total questions per call
+    const sumTotalQuestions = analyses.reduce((acc, analysis) => acc + (analysis.totalQuestions || 0), 0);
+    const avgQuestionsPerCall = sumTotalQuestions / analyses.length;
+    
+    res.json({
+      averageQuestionsRate: parseFloat(avgQuestionsRate.toFixed(2)),
+      averageQuestionsPerCall: parseFloat(avgQuestionsPerCall.toFixed(2)),
+      totalCalls: analyses.length
+    });
+  } catch (error) {
+    console.error('Error calculating questions rate:', error);
+    res.status(500).json({ error: 'Failed to calculate questions rate' });
+  }
+});
+
+
+// NEW ENDPOINT: topic coherence
+dashboardRouter.get('/topicCoherence', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // @ts-ignore
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
+    const userRole = await getUserOrgRole(userId, orgId);
+    
+    if (!userRole) {
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
+    }
+
+    let whereClause = {};
+    if (canAccessAllOrgData(userRole as Role)) {
+      // For admin/manager/coach - get data for all call assets in the org
+      whereClause = {
+        callAsset: {
+          organizationId: orgId
+        }
+      };
+    } else {
+      // For sales rep - only get data for their own call assets in the org
+      whereClause = {
+        callAsset: {
+          userId,
+          organizationId: orgId
+        }
+      };
+    }
+
+    // Fetch analyses with topicCoherence
+    const analyses = await prisma.analysis.findMany({
+      where: whereClause,
+      select: {
+        topicCoherence: true,
+        callAsset: {
+          select: {
+            name: true
+          }
+        },
+      }
+    });
+
+    if (analyses.length === 0) {
+      res.json({
+        averageCoherence: 0,
+        relevantShiftsPercentage: 0,
+        totalCalls: 0
+      });
+      return;
+    }
+
+    // Calculate average topic coherence
+    const sumCoherence = analyses.reduce((acc, analysis) => acc + (analysis.topicCoherence || 0.5), 0);
+    const avgCoherence = sumCoherence / analyses.length;
+    
+    res.json({
+      averageCoherence: parseFloat((avgCoherence * 100).toFixed(2)), // Convert to percentage
+    });
+  } catch (error) {
+    console.error('Error calculating topic coherence:', error);
+    res.status(500).json({ error: 'Failed to calculate topic coherence' });
+  }
+});
+
+// NEW ENDPOINT: objection categories trends over time
+dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // @ts-ignore
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    
+    // Validate orgId and optional time range parameters
+    const validation = validateQuery(
+      z.object({
+        orgId: z.string().uuid().nonempty({ message: 'Organization ID is required' }),
+        startDate: z.string().optional(), // Format: YYYY-MM-DD
+        endDate: z.string().optional(),   // Format: YYYY-MM-DD
+      }), 
+      req
+    );
+    
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId, startDate, endDate } = validation.data!;
+    
+    const userRole = await getUserOrgRole(userId, orgId);
+    
+    if (!userRole) {
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
+    }
+
+    // Define the date range for the query
+    let dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter = {
+        date: {
+          gte: new Date(startDate),
+          lte: new Date(endDate),
+        }
+      };
+    } else if (startDate) {
+      dateFilter = {
+        date: {
+          gte: new Date(startDate),
+        }
+      };
+    } else if (endDate) {
+      dateFilter = {
+        date: {
+          lte: new Date(endDate),
+        }
+      };
+    } else {
+      // Default to last 3 months if no date range specified
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      
+      dateFilter = {
+        date: {
+          gte: threeMonthsAgo,
+        }
+      };
+    }
+
+    // Build the where clause based on user role
+    let whereClause = {
+      ...dateFilter
+    };
+    
+    if (canAccessAllOrgData(userRole as Role)) {
+      // For admin/manager/coach - get data for all call assets in the org
+      whereClause = {
+        ...whereClause,
+        callAsset: {
+          organizationId: orgId
+        }
+      };
+    } else {
+      // For sales rep - only get data for their own call assets in the org
+      whereClause = {
+        ...whereClause,
+        callAsset: {
+          userId,
+          organizationId: orgId
+        }
+      };
+    }
+
+    // Fetch all analyses in the date range
+    const analyses = await prisma.analysis.findMany({
+      where: whereClause,
+      select: {
+        date: true,
+        objections: {
+          select: {
+            type: true
+          }
+        }
+      },
+      orderBy: {
+        date: 'asc'
+      }
+    });
+
+    // Group objections by date and type
+    interface DateCounts {
+      [date: string]: {
+        PRICE: number;
+        TIMING: number;
+        TRUST_RISK: number;
+        COMPETITION: number;
+        STAKEHOLDERS: number;
+        OTHERS: number;
+        [key: string]: number;
+      };
+    }
+
+    const objectionsByDate: DateCounts = {};
+
+    analyses.forEach(analysis => {
+      // Format the date as YYYY-MM-DD
+      const dateStr = analysis.date.toISOString().split('T')[0];
+      
+      // Initialize the date entry if it doesn't exist
+      if (!objectionsByDate[dateStr]) {
+        objectionsByDate[dateStr] = {
+          PRICE: 0,
+          TIMING: 0,
+          TRUST_RISK: 0,
+          COMPETITION: 0,
+          STAKEHOLDERS: 0,
+          OTHERS: 0
+        };
+      }
+      
+      // Count objections by type
+      analysis.objections.forEach(objection => {
+        objectionsByDate[dateStr][objection.type]++;
+      });
+    });
+
+    // Convert to array format for the chart component
+    const result = Object.entries(objectionsByDate).map(([date, counts]) => ({
+      date,
+      price: counts.PRICE,
+      timing: counts.TIMING,
+      trust: counts.TRUST_RISK,
+      competition: counts.COMPETITION,
+      stakeholders: counts.STAKEHOLDERS,
+      other: counts.OTHERS
+    }));
+
+    // Handle case with no data
+    if (result.length === 0) {
+      // Return empty data structure with today's date
+      const today = new Date().toISOString().split('T')[0];
+      res.json([{
+        date: today,
+        price: 0,
+        timing: 0,
+        trust: 0,
+        competition: 0,
+        stakeholders: 0,
+        other: 0
+      }]);
+      return;
+    }
+
+    // Return the formatted data
+    res.json(result);
+  } catch (error) {
+    console.error('Error fetching objection categories trend:', error);
+    res.status(500).json({ error: 'Failed to fetch objection categories trend' });
+  }
+});
+
 export default dashboardRouter;
