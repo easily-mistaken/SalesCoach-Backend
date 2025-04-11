@@ -108,9 +108,11 @@ model Analysis {
   callAsset      CallAsset    @relation(fields: [callAssetId], references: [id], onDelete: Cascade)
   objections     Objection[]  // One-to-many relation with Objection
   sentimentEntries  SentimentEntry[]
-  // Add talk ratio fields
-  salesRepTalkRatio Float     // Percentage of time the sales rep speaks
-  participantTalkStats ParticipantTalkStat[] // Detailed talking stats for each participant
+  salesRepTalkRatio Float
+  participantTalkStats ParticipantTalkStat[]
+  questionsRate   Float
+  totalQuestions  Int
+  topicCoherence  Float
 }
 
 // New model for participant talk statistics

@@ -124,6 +124,9 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                         recommendations: data.recommendations,
                         callAssetId: asset.id,
                         salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
+                        questionsRate: data.questionsAnalysis.questionsPerMinute,
+                        totalQuestions: data.questionsAnalysis.totalQuestions,
+                        topicCoherence: data.topicCoherence.score
                     },
                 });
                 

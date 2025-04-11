@@ -58,6 +58,14 @@ const TranscriptAnalysis = z.object({
     salesRepPercentage: z.number().min(0).max(100).describe("Percentage of the conversation where the sales rep was talking"),
     participantStats: z.array(ParticipantTalkStats).describe("Detailed statistics about each participant's talking time")
   }).describe("Analysis of who talked how much during the call"),
+  questionsAnalysis: z.object({
+    totalQuestions: z.number().describe("Total number of questions asked in the call"),
+    questionsPerMinute: z.number().min(0).describe("Rate of questions asked per minute of the call"),
+    salesRepQuestions: z.number().describe("Number of questions asked by the sales rep")
+  }).describe("Analysis of questions asked during the call"),
+  topicCoherence: z.object({
+    score: z.number().min(0).max(1).describe("Score from 0-1 indicating how well the conversation stayed on relevant topics"),
+  }).describe("Analysis of how well the conversation stayed on relevant topics"),
   objections: z.array(Objection).describe("List of objections raised and responses given"),
   keyInsights: z.array(z.string()).describe("3-5 key insights about prospect interests, concerns, and decision-making"),
   recommendations: z.array(z.string()).describe("3-5 actionable recommendations for the sales rep")
@@ -168,6 +176,28 @@ function determineObjectionType(text: string): 'PRICE' | 'TIMING' | 'TRUST_RISK'
   }
 }
 
+/**
+ * Function to calculate questions per minute from total questions and duration
+ */
+function calculateQuestionsPerMinute(totalQuestions: number, duration: string): number {
+  // Parse duration format MM:SS or HH:MM:SS
+  const parts = duration.split(':').map(Number);
+  let totalMinutes = 0;
+  
+  if (parts.length === 2) {
+    // MM:SS format
+    totalMinutes = parts[0] + (parts[1] / 60);
+  } else if (parts.length === 3) {
+    // HH:MM:SS format
+    totalMinutes = (parts[0] * 60) + parts[1] + (parts[2] / 60);
+  }
+  
+  // Avoid division by zero
+  if (totalMinutes === 0) return 0;
+  
+  return totalQuestions / totalMinutes;
+}
+
 // Main function to analyze the call transcript
 async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisResult> {
   try {
@@ -200,8 +230,15 @@ async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisRe
     7. For each objection, determine if it was successfully addressed (true if effectiveness > 0.6, false otherwise)
     8. Provide 3-5 key insights about the prospect's interests and concerns
     9. Suggest 3-5 actionable recommendations for the sales rep
-    
-    For the ID field, generate a unique identifier with format "tr-" followed by 6 random digits.
+    10. Analyze questions in the conversation:
+       - Count the total number of questions asked in the call
+       - Identify how many questions were asked by the sales rep
+       - This includes rhetorical questions and clarification questions
+    11. Analyze topic coherence:
+       - Score how well the conversation stayed on relevant topics (0-1 scale)
+       - Identify major topic shifts in the conversation
+       - For each shift, note whether it was relevant to the sales objectives
+       - A high topic coherence score means the conversation stayed focused on relevant sales topics
     
     Here is the transcript to analyze:
     
@@ -230,8 +267,25 @@ async function analyzeCallTranscript(transcriptText: string): Promise<AnalysisRe
       talkRatio: result.talkRatio || {
         salesRepPercentage: calculateDefaultTalkRatio(transcriptText, result.participants),
         participantStats: []
+      },
+      // Ensure questions analysis exists
+      questionsAnalysis: result.questionsAnalysis || {
+        totalQuestions: estimateTotalQuestions(transcriptText),
+        questionsPerMinute: 0, // Will be calculated below
+        salesRepQuestions: 0
+      },
+      // Ensure topic coherence exists
+      topicCoherence: result.topicCoherence || {
+        score: 0.5, // Default moderate coherence
+        topicShifts: []
       }
     };
+    
+    // Calculate questions per minute if not already done
+    if (!result.questionsAnalysis?.questionsPerMinute) {
+      processedResult.questionsAnalysis.questionsPerMinute = 
+        calculateQuestionsPerMinute(processedResult.questionsAnalysis.totalQuestions, result.duration);
+    }
 
     // Create complete result object
     const analysisResult: AnalysisResult = {
@@ -285,6 +339,20 @@ function calculateDefaultTalkRatio(transcript: string, participants: string[]): 
   } catch (error) {
     console.error("Error calculating default talk ratio:", error);
     return 50; // Default value on error
+  }
+}
+
+/**
+ * Estimate the total number of questions in the transcript as a fallback
+ */
+function estimateTotalQuestions(transcript: string): number {
+  try {
+    // Count sentences ending with question marks
+    const questionMatches = transcript.match(/[^.!?]*\?/g);
+    return questionMatches ? questionMatches.length : 0;
+  } catch (error) {
+    console.error("Error estimating questions:", error);
+    return 0;
   }
 }
 
