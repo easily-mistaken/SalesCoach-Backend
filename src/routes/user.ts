@@ -23,9 +23,6 @@ userRouter.put('/', async (req: Request, res: Response): Promise<void> => {
     const {
       firstName,
       lastName,
-      email,
-      phone,
-      isEmailVerified
     } = req.body;
   
     try {
@@ -34,9 +31,6 @@ userRouter.put('/', async (req: Request, res: Response): Promise<void> => {
         data: {
           firstName,
           lastName,
-          email,
-          phone,
-          isEmailVerified
         }
       });
   
