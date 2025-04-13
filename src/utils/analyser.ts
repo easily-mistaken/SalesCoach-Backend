@@ -872,78 +872,46 @@ async function analyzeCallTranscript(
     const systemPrompt = `
 You are a professional sales call analyzer with expertise in identifying patterns, extracting insights, and providing actionable feedback.
 
-## Your Primary Objective:
-Analyze sales call transcripts and provide detailed structured analysis with a STRONG FOCUS on objection detection.
+## Primary Objective:
+Analyze sales call transcripts and provide detailed structured analysis focusing strongly on objection detection.
 
-## Most Critical Aspect: OBJECTION DETECTION
-The MOST CRITICAL part of your analysis is to thoroughly identify ALL objections throughout the call.
-You MUST find a MINIMUM OF 4 OBJECTIONS in every call transcript, and typically there are 5-10 objections in a standard sales call.
+## OBJECTION DETECTION (MOST CRITICAL ASPECT)
+You MUST find a MINIMUM OF 4 OBJECTIONS in every call transcript. Most sales calls have 5-10 objections.
 
-Look extremely carefully for these three types of objections:
-- Direct objections: Explicit statements of concern (e.g., "That's too expensive")
-- Indirect objections: Implied concerns or hesitations (e.g., "We need to think about it")
-- Veiled objections: Questions that mask underlying concerns (e.g., "How does this compare to...")
+Look for these types of objections:
+- Direct objections: "That's too expensive", "I don't think this will work for us"
+- Indirect objections: "We need to think about it", "I'll have to discuss with the team"
+- Veiled objections: "How does this compare to...", "What if we wanted to..."
+- Stalling tactics: "Send me more information", "Let me think about it"
 
 Examples of subtle objections that are often missed:
-- "We're happy with our current solution." (indirect objection - COMPETITION)
-- "How would this fit into our existing workflow?" (veiled objection - IMPLEMENTATION)
-- "I'm not sure we have the bandwidth right now." (indirect objection - TIMING)
-- "Can you send me some more information?" (stalling objection - TRUST_RISK)
-- "What happens if it doesn't work as expected?" (veiled objection - RISK)
-- "Does your solution integrate with our existing systems?" (technical concern - TECHNICAL)
-- "This seems complicated to set up." (implied objection - IMPLEMENTATION)
-- "I need to run this by my boss/team." (stakeholder objection - STAKEHOLDERS)
-- "We've tried something similar before without success." (trust objection - TRUST_RISK)
-- "How long would it take to see results?" (value objection - VALUE)
+- "We're happy with our current solution." (COMPETITION objection)
+- "How would this fit into our workflow?" (IMPLEMENTATION objection)
+- "I'm not sure we have the bandwidth right now." (TIMING objection)
+- "Can you send more information?" (TRUST_RISK stalling objection)
+- "Does it integrate with our systems?" (TECHNICAL objection)
+- "This seems complicated to set up." (IMPLEMENTATION objection)
+- "I need to run this by my team." (STAKEHOLDERS objection)
+- "We've tried something similar before without success." (TRUST_RISK objection)
 
-## Complete Analysis Structure:
-1. Core Call Information
-   - Title/Meeting: Purpose of the call
-   - Date and Duration: When and how long
-   - Participants: All participants with roles
-   - Call Summary: 1-2 paragraph summary of main topics and outcome
+For each objection, provide:
+- Exact quote and timestamp
+- Objection type (PRICE, TIMING, TRUST_RISK, COMPETITION, STAKEHOLDERS, TECHNICAL, IMPLEMENTATION, VALUE, OTHERS)
+- The sales rep's response with effectiveness rating (0-1)
+- Whether objection was successfully addressed (effectiveness > 0.7)
 
-2. Objection Analysis (MOST IMPORTANT SECTION)
-   - For each of at least 4-7 objections:
-     * Exact quote and timestamp
-     * Objection type (PRICE, TIMING, TRUST_RISK, COMPETITION, STAKEHOLDERS, TECHNICAL, IMPLEMENTATION, VALUE, OTHERS)
-     * Sales rep's response with effectiveness rating (0-1)
-     * Whether objection was resolved (effectiveness > 0.7)
-
-3. Sentiment Analysis
-   - Overall sentiment score (0-1)
-   - Timeline of sentiment changes with timestamps
-   - High points, low points, and turning points
-
-4. Conversation Dynamics
-   - Talk ratio: Speaking time percentages
-   - Question analysis: Count, types, effectiveness
-   - Topic control and active listening assessment
-
-5. Topic Coherence & Structure
-   - Score for logical flow (0-1)
-   - Key topic shifts and relevance
-   - Time allocation across topics
-
+## Analysis Structure:
+1. Core Call Information (title, date, duration, participants, summary)
+2. Objection Analysis (minimum 4 objections)
+3. Sentiment Analysis (overall score, timeline, high/low points)
+4. Conversation Dynamics (talk ratio, questions, topic control)
+5. Topic Coherence & Structure (logical flow score, topic shifts)
 6. Value Proposition & Solution Positioning
-   - How value was articulated
-   - Alignment with prospect's needs
-   - Evidence and social proof used
-
 7. Next Steps & Close
-   - Commitments made by each party
-   - Close attempt strength
-   - Progression likelihood
+8. Key Insights & Recommendations (3-5 of each)
+9. Competitive Intelligence (if relevant)
 
-8. Key Insights & Recommendations
-   - 3-5 key insights about prospect
-   - 3-5 actionable recommendations
-
-9. Competitive Intelligence
-   - Competitor mentions and positioning
-   - Differentiators that resonated
-
-REMEMBER: If you identify fewer than 4 objections, re-examine the transcript for subtle or veiled objections. This is CRITICAL for accurate sales coaching.
+IMPORTANT: If you initially identify fewer than 4 objections, re-examine the transcript to find subtle or disguised objections that were missed in your first pass.
 `;
 
     // Initialize the model with structured output capability
@@ -956,7 +924,7 @@ REMEMBER: If you identify fewer than 4 objections, re-examine the transcript for
     // Build messages with system prompt and human message containing transcript
     const messages = [
       new SystemMessage(systemPrompt),
-      new HumanMessage(`Please analyze this sales call transcript thoroughly, with special focus on identifying ALL objections (aim for at least 4-7):
+      new HumanMessage(`Please analyze this sales call transcript thoroughly, with special focus on identifying ALL objections (find at least 4-7):
 
 ${transcriptText}`)
     ];
@@ -968,9 +936,9 @@ ${transcriptText}`)
     console.log("Sending to LLM for analysis...");
     const result = await structuredModel.invoke(messages);
 
-    // Process results as before...
+    // Continue with your existing post-processing code
     console.log("Post-processing and enhancing analysis results...");
-
+    
     // 1. Process objections - add missing info and format for UI
     const processedObjections = result.objections.map((objection, index) => {
       // Generate ID if missing
@@ -1009,6 +977,7 @@ ${transcriptText}`)
       };
     });
 
+    // Rest of your existing post-processing code
     // 2. Calculate objection category counts for dashboard cards
     const categoryCounts = countObjectionsByCategory(processedObjections);
 
@@ -1031,22 +1000,11 @@ ${transcriptText}`)
     // 5. Ensure all required fields exist with reasonable defaults
     const processedResult = {
       ...result,
-      // Replace objections with enhanced versions
       objections: processedObjections,
-
-      // Add category counts
       categoryCounts: result.categoryCounts || categoryCounts,
-
-      // Add formatted sentiment data for charts
       sentimentEntries: result.sentimentEntries || sentimentEntries,
-
-      // Add formatted participant talk stats
       participantTalkStats: result.participantTalkStats || participantTalkStats,
-
-      // Add simplified overall sentiment for UI components
       overallSentiment: result.overallSentiment || result.sentiment.overall,
-
-      // Ensure talk ratio has idealRatio property
       talkRatio: {
         ...result.talkRatio,
         idealRatio:
@@ -1054,8 +1012,6 @@ ${transcriptText}`)
             ? result.talkRatio.idealRatio
             : result.talkRatio.salesRepPercentage < 60,
       },
-
-      // Ensure questions analysis has all required fields
       questionsAnalysis: {
         ...result.questionsAnalysis,
         questionsPerMinute:
@@ -1072,11 +1028,11 @@ ${transcriptText}`)
       data: processedResult,
     };
 
-    // Format data for Prisma compatibility
+    // Format data for Prisma compatibility as before
     const prismaCompatibleOutput: PrismaAnalysisOutput = {
       id: processedResult.id,
       title: processedResult.title,
-      date: new Date(processedResult.date), // Convert string to Date object
+      date: new Date(processedResult.date),
       duration: processedResult.duration,
       participants: processedResult.participants,
       summary: processedResult.summary,
@@ -1084,8 +1040,6 @@ ${transcriptText}`)
         processedResult.overallSentiment || processedResult.sentiment.overall,
       keyInsights: processedResult.keyInsights,
       recommendations: processedResult.recommendations,
-
-      // Format objections for Prisma
       objections: processedResult.objections.map((obj) => ({
         id: obj.id,
         text: obj.text,
@@ -1096,14 +1050,10 @@ ${transcriptText}`)
         success: obj.success,
         color: obj.color,
       })),
-
-      // Format sentiment entries for Prisma
       sentimentEntries: processedResult.sentiment.timeline.map((entry) => ({
         time: entry.time,
         score: entry.score,
       })),
-
-      // Talk ratio metrics
       salesRepTalkRatio: processedResult.talkRatio.salesRepPercentage,
       participantTalkStats: processedResult.talkRatio.participantStats.map(
         (stat) => ({
@@ -1113,16 +1063,11 @@ ${transcriptText}`)
           percentage: stat.percentage,
         })
       ),
-
-      // Questions metrics
       questionsRate: processedResult.questionsAnalysis.questionsPerMinute,
       totalQuestions: processedResult.questionsAnalysis.totalQuestions,
-
-      // Topic coherence
       topicCoherence: processedResult.topicCoherence.score,
     };
 
-    // Store Prisma-compatible output in the result for easy database integration
     (analysisResult as any).prismaOutput = prismaCompatibleOutput;
 
     console.log("Analysis complete!");

@@ -111,91 +111,118 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             const analysisDate = new Date(data.date);
             
             // STEP 3: Create all related records in a SINGLE TRANSACTION
-            // This is the key optimization
             const analysis = await retryWithBackoff(async () => {
-                return await prisma.$transaction(async (tx) => {
-                    // Create the main analysis record
-                    const analysisRecord = await tx.analysis.create({
-                        data: {
-                            title: data.title,
-                            date: analysisDate,
-                            duration: data.duration,
-                            participants: data.participants,
-                            summary: data.summary,
-                            overallSentiment: data.sentiment.overall,
-                            keyInsights: data.keyInsights,
-                            recommendations: data.recommendations,
-                            callAssetId: asset.id,
-                            salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
-                            questionsRate: data.questionsAnalysis.questionsPerMinute,
-                            totalQuestions: data.questionsAnalysis.totalQuestions,
-                            topicCoherence: data.topicCoherence.score
-                        },
-                    });
+                // Store analysis record ID for later retrieval
+                let analysisRecordId: any;
+              
+                // First transaction - create all the records with increased timeout
+                await prisma.$transaction(async (tx) => {
+                  // Create the main analysis record
+                  const analysisRecord = await tx.analysis.create({
+                    data: {
+                      title: data.title,
+                      date: analysisDate,
+                      duration: data.duration,
+                      participants: data.participants,
+                      summary: data.summary,
+                      overallSentiment: data.sentiment.overall,
+                      keyInsights: data.keyInsights,
+                      recommendations: data.recommendations,
+                      callAssetId: asset.id,
+                      salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
+                      questionsRate: data.questionsAnalysis.questionsPerMinute,
+                      totalQuestions: data.questionsAnalysis.totalQuestions,
+                      topicCoherence: data.topicCoherence.score
+                    },
+                  });
+                  
+                  analysisRecordId = analysisRecord.id;
+                  console.log("Created analysis record:", analysisRecordId);
+                  
+                  // OPTIMIZATION: Process sentiment entries and objections in parallel
+                  // but each type in a single batch operation
+                  await Promise.all([
+                    // 1. Process all sentiment entries as a single operation
+                    (async () => {
+                      // Prepare all sentiment entry data
+                      const sentimentEntryData = data.sentiment.timeline.map(point => ({
+                        time: point.time,
+                        score: point.score,
+                        analysisId: analysisRecordId,
+                      }));
+                      
+                      // Create all entries in a single batch operation (more efficient than multiple creates)
+                      if (sentimentEntryData.length > 0) {
+                        await tx.sentimentEntry.createMany({
+                          data: sentimentEntryData
+                        });
+                      }
+                      console.log(`Created ${sentimentEntryData.length} sentiment entries in batch`);
+                    })(),
                     
-                    console.log("Created analysis record:", analysisRecord.id);
+                    // 2. Process all objections as a single operation
+                    (async () => {
+                      // Prepare all objection data
+                      const objectionData = data.objections.map(obj => ({
+                        text: obj.text,
+                        time: obj.time,
+                        response: obj.response,
+                        effectiveness: obj.effectiveness,
+                        type: obj.type,
+                        success: obj.effectiveness > 0.6,
+                        analysisId: analysisRecordId,
+                      }));
+                      
+                      // Create all objections in a single batch operation
+                      if (objectionData.length > 0) {
+                        await tx.objection.createMany({
+                          data: objectionData
+                        });
+                      }
+                      console.log(`Created ${objectionData.length} objection entries in batch`);
+                    })(),
                     
-                    // Create sentiment entries in batch
-                    await Promise.all(data.sentiment.timeline.map(point => 
-                        tx.sentimentEntry.create({
-                            data: {
-                                time: point.time,
-                                score: point.score,
-                                analysisId: analysisRecord.id,
-                            }
-                        })
-                    ));
-                    console.log("Created sentiment entries");
-                    
-                    // Create participant talk stats in batch if available
-                    if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
-                        await Promise.all(data.talkRatio.participantStats.map(stat => 
-                            tx.participantTalkStat.create({
-                                data: {
-                                    name: stat.name,
-                                    role: stat.role,
-                                    wordCount: stat.wordCount,
-                                    percentage: stat.percentage,
-                                    analysisId: analysisRecord.id,
-                                }
-                            })
-                        ));
-                        console.log("Created participant talk stats");
-                    }
-                    
-                    // Create objections in batch
-                    await Promise.all(data.objections.map(obj => 
-                        tx.objection.create({
-                            data: {
-                                text: obj.text,
-                                time: obj.time,
-                                response: obj.response,
-                                effectiveness: obj.effectiveness,
-                                type: obj.type,
-                                success: obj.effectiveness > 0.6,
-                                analysisId: analysisRecord.id,
-                            }
-                        })
-                    ));
-                    console.log("Created objection entries");
-                    
-                    // Update the asset status within the same transaction
-                    await tx.callAsset.update({
-                        where: { id: asset.id },
-                        data: { status: "SUCCESS" }
-                    });
-                    
-                    // Return the complete analysis with all related data
-                    return tx.analysis.findUnique({
-                        where: { id: analysisRecord.id },
-                        include: {
-                            sentimentEntries: true,
-                            objections: true,
-                            participantTalkStats: true
-                        }
-                    });
+                    // 3. Process all participant talk stats as a single operation
+                    (async () => {
+                      if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
+                        // Prepare all participant data
+                        const participantData = data.talkRatio.participantStats.map(stat => ({
+                          name: stat.name,
+                          role: stat.role,
+                          wordCount: stat.wordCount,
+                          percentage: stat.percentage,
+                          analysisId: analysisRecordId,
+                        }));
+                        
+                        // Create all participant stats in a single batch operation
+                        await tx.participantTalkStat.createMany({
+                          data: participantData
+                        });
+                        console.log(`Created ${participantData.length} participant talk stats in batch`);
+                      }
+                    })()
+                  ]);
+                  
+                  // Update the asset status - this is a single operation so no need to batch
+                  await tx.callAsset.update({
+                    where: { id: asset.id },
+                    data: { status: "SUCCESS" }
+                  });
+                }, {
+                  maxWait: 10000, // Maximum time to wait for a transaction slot
+                  timeout: 15000  // Increase timeout to 15 seconds (from default 5s)
                 });
-            });
+                
+                // After transaction completes, fetch the complete analysis in a separate query
+                return prisma.analysis.findUnique({
+                  where: { id: analysisRecordId },
+                  include: {
+                    sentimentEntries: true,
+                    objections: true,
+                    participantTalkStats: true
+                  }
+                });
+              });
             
             // Return success response with the created asset and analysis
             res.status(201).json({ 
