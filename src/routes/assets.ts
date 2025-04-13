@@ -71,7 +71,8 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
         
         const { content, type, organizationId, name } = validation.data!;
         
-        // Step 1: Create the asset
+        // STEP 1: Create the asset - keep this outside transaction
+        // since we need the asset ID for the analysis
         const asset = await prisma.callAsset.create({
             data: { 
                 content,
@@ -82,7 +83,6 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                         id: userId
                     }
                 },
-                // Connect only if organizationId exists
                 ...(organizationId && {
                     organization: {
                         connect: {
@@ -93,7 +93,8 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             },
         });
         
-        // Step 2: Extract and analyze the text
+        // STEP 2: Extract and analyze the text
+        // This is an external API call so it can't be part of the transaction
         let text;
         try {
             if (type === "FILE") {
@@ -109,93 +110,90 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             // Parse the date string to a proper DateTime format
             const analysisDate = new Date(data.date);
             
-            // Step 3: Create the analysis separately (no transaction)
+            // STEP 3: Create all related records in a SINGLE TRANSACTION
+            // This is the key optimization
             const analysis = await retryWithBackoff(async () => {
-                // Create the main analysis record first
-                const analysisRecord = await prisma.analysis.create({
-                    data: {
-                        title: data.title,
-                        date: analysisDate,
-                        duration: data.duration,
-                        participants: data.participants,
-                        summary: data.summary,
-                        overallSentiment: data.sentiment.overall,
-                        keyInsights: data.keyInsights,
-                        recommendations: data.recommendations,
-                        callAssetId: asset.id,
-                        salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
-                        questionsRate: data.questionsAnalysis.questionsPerMinute,
-                        totalQuestions: data.questionsAnalysis.totalQuestions,
-                        topicCoherence: data.topicCoherence.score
-                    },
-                });
-                
-                console.log("Created analysis record:", analysisRecord.id);
-                
-                // Step 4: Create sentiment entries in batches
-                const sentimentPromises = data.sentiment.timeline.map(point => 
-                    prisma.sentimentEntry.create({
+                return await prisma.$transaction(async (tx) => {
+                    // Create the main analysis record
+                    const analysisRecord = await tx.analysis.create({
                         data: {
-                            time: point.time,
-                            score: point.score,
-                            analysisId: analysisRecord.id,
-                        }
-                    })
-                );
-                
-                await Promise.all(sentimentPromises);
-                console.log("Created sentiment entries");
-                
-                // Step 5: Create participant talk stats in batches
-                if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
-                    const talkStatPromises = data.talkRatio.participantStats.map(stat => 
-                        prisma.participantTalkStat.create({
+                            title: data.title,
+                            date: analysisDate,
+                            duration: data.duration,
+                            participants: data.participants,
+                            summary: data.summary,
+                            overallSentiment: data.sentiment.overall,
+                            keyInsights: data.keyInsights,
+                            recommendations: data.recommendations,
+                            callAssetId: asset.id,
+                            salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
+                            questionsRate: data.questionsAnalysis.questionsPerMinute,
+                            totalQuestions: data.questionsAnalysis.totalQuestions,
+                            topicCoherence: data.topicCoherence.score
+                        },
+                    });
+                    
+                    console.log("Created analysis record:", analysisRecord.id);
+                    
+                    // Create sentiment entries in batch
+                    await Promise.all(data.sentiment.timeline.map(point => 
+                        tx.sentimentEntry.create({
                             data: {
-                                name: stat.name,
-                                role: stat.role,
-                                wordCount: stat.wordCount,
-                                percentage: stat.percentage,
+                                time: point.time,
+                                score: point.score,
                                 analysisId: analysisRecord.id,
                             }
                         })
-                    );
+                    ));
+                    console.log("Created sentiment entries");
                     
-                    await Promise.all(talkStatPromises);
-                    console.log("Created participant talk stats");
-                }
-                
-                // Step 6: Create objections in batches
-                const objectionPromises = data.objections.map(obj => 
-                    prisma.objection.create({
-                        data: {
-                            text: obj.text,
-                            time: obj.time,
-                            response: obj.response,
-                            effectiveness: obj.effectiveness,
-                            type: obj.type,
-                            success: obj.effectiveness > 0.6,
-                            analysisId: analysisRecord.id,
-                        }
-                    })
-                );
-                
-                await Promise.all(objectionPromises);
-                console.log("Created objection entries");
-                
-                // Step 7: Update the asset status
-                await prisma.callAsset.update({
-                    where: { id: asset.id },
-                    data: { status: "SUCCESS" }
-                });
-                
-                // Step 8: Fetch the complete analysis with relations
-                return prisma.analysis.findUnique({
-                    where: { id: analysisRecord.id },
-                    include: {
-                        sentimentEntries: true,
-                        objections: true,
-                        participantTalkStats: true
+                    // Create participant talk stats in batch if available
+                    if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
+                        await Promise.all(data.talkRatio.participantStats.map(stat => 
+                            tx.participantTalkStat.create({
+                                data: {
+                                    name: stat.name,
+                                    role: stat.role,
+                                    wordCount: stat.wordCount,
+                                    percentage: stat.percentage,
+                                    analysisId: analysisRecord.id,
+                                }
+                            })
+                        ));
+                        console.log("Created participant talk stats");
                     }
+                    
+                    // Create objections in batch
+                    await Promise.all(data.objections.map(obj => 
+                        tx.objection.create({
+                            data: {
+                                text: obj.text,
+                                time: obj.time,
+                                response: obj.response,
+                                effectiveness: obj.effectiveness,
+                                type: obj.type,
+                                success: obj.effectiveness > 0.6,
+                                analysisId: analysisRecord.id,
+                            }
+                        })
+                    ));
+                    console.log("Created objection entries");
+                    
+                    // Update the asset status within the same transaction
+                    await tx.callAsset.update({
+                        where: { id: asset.id },
+                        data: { status: "SUCCESS" }
+                    });
+                    
+                    // Return the complete analysis with all related data
+                    return tx.analysis.findUnique({
+                        where: { id: analysisRecord.id },
+                        include: {
+                            sentimentEntries: true,
+                            objections: true,
+                            participantTalkStats: true
+                        }
+                    });
                 });
             });
             
