@@ -34,7 +34,7 @@ function validateBody<T extends z.ZodTypeAny>(
 // Helper function to retry a function with exponential backoff
 async function retryWithBackoff(fn: any, maxRetries = 3, initialDelay = 1000) {
   let retries = 0;
-  
+
   while (true) {
     try {
       return await fn();
@@ -43,7 +43,7 @@ async function retryWithBackoff(fn: any, maxRetries = 3, initialDelay = 1000) {
       if (retries > maxRetries) {
         throw error;
       }
-      
+
       const delay = initialDelay * Math.pow(2, retries - 1);
       console.log(`Retrying operation after ${delay}ms (attempt ${retries}/${maxRetries})...`);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -56,23 +56,22 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     try {
         // @ts-ignore
         const userId = req.user?.id;
-        
+
         if (!userId) {
             res.status(401).json({ error: 'User authentication required' });
             return;
         }
-        
+
         // Validate request body
         const validation = validateBody(createAssetSchema, req);
         if (!validation.success) {
             res.status(400).json({ error: validation.error });
             return;
         }
-        
+
         const { content, type, organizationId, name } = validation.data!;
-        
-        // STEP 1: Create the asset - keep this outside transaction
-        // since we need the asset ID for the analysis
+
+        // Step 1: Create the asset
         const asset = await prisma.callAsset.create({
             data: { 
                 content,
@@ -83,6 +82,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                         id: userId
                     }
                 },
+                // Connect only if organizationId exists
                 ...(organizationId && {
                     organization: {
                         connect: {
@@ -92,9 +92,8 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 })
             },
         });
-        
-        // STEP 2: Extract and analyze the text
-        // This is an external API call so it can't be part of the transaction
+
+        // Step 2: Extract and analyze the text
         let text;
         try {
             if (type === "FILE") {
@@ -104,137 +103,124 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             } else {
                 throw new Error("Invalid asset type");
             }
-            
+
             const { data } = await analyzeCallTranscript(text);
-            
+
             // Parse the date string to a proper DateTime format
             const analysisDate = new Date(data.date);
-            
-            // STEP 3: Create all related records in a SINGLE TRANSACTION
+
+            // Step 3: Create the analysis separately (no transaction)
             const analysis = await retryWithBackoff(async () => {
-                // Store analysis record ID for later retrieval
-                let analysisRecordId: any;
-                
-                // First transaction - create all the records with increased timeout
-                await prisma.$transaction(async (tx) => {
-                  // Create the main analysis record
-                  const analysisRecord = await tx.analysis.create({
+                // Create the main analysis record first
+                const analysisRecord = await prisma.analysis.create({
                     data: {
-                      title: data.title,
-                      date: analysisDate,
-                      duration: data.duration,
-                      participants: data.participants,
-                      summary: data.summary,
-                      overallSentiment: data.sentiment.overall,
-                      keyInsights: data.keyInsights,
-                      recommendations: data.recommendations,
-                      callAssetId: asset.id,
-                      salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
-                      questionsRate: data.questionsAnalysis.questionsPerMinute,
-                      totalQuestions: data.questionsAnalysis.totalQuestions,
-                      topicCoherence: data.topicCoherence.score
+                        title: data.title,
+                        date: analysisDate,
+                        duration: data.duration,
+                        participants: data.participants,
+                        summary: data.summary,
+                        overallSentiment: data.sentiment.overall,
+                        keyInsights: data.keyInsights,
+                        recommendations: data.recommendations,
+                        callAssetId: asset.id,
+                        salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
+                        questionsRate: data.questionsAnalysis.questionsPerMinute,
+                        totalQuestions: data.questionsAnalysis.totalQuestions,
+                        topicCoherence: data.topicCoherence.score
                     },
-                  });
-                  
-                  analysisRecordId = analysisRecord.id;
-                  console.log("Created analysis record:", analysisRecordId);
-                  
-                  // Create sentiment entries in batch
-                  await Promise.all(data.sentiment.timeline.map(point => 
-                    tx.sentimentEntry.create({
-                      data: {
-                        time: point.time,
-                        score: point.score,
-                        analysisId: analysisRecordId,
-                      }
-                    })
-                  ));
-                  console.log("Created sentiment entries");
-                  
-                  // Create participant talk stats in batch if available
-                  if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
-                    await Promise.all(data.talkRatio.participantStats.map(stat => 
-                      tx.participantTalkStat.create({
+                });
+
+                console.log("Created analysis record:", analysisRecord.id);
+
+                // Step 4: Create sentiment entries in batches
+                const sentimentPromises = data.sentiment.timeline.map(point => 
+                    prisma.sentimentEntry.create({
                         data: {
-                          name: stat.name,
-                          role: stat.role,
-                          wordCount: stat.wordCount,
-                          percentage: stat.percentage,
-                          analysisId: analysisRecordId,
+                            time: point.time,
+                            score: point.score,
+                            analysisId: analysisRecord.id,
                         }
-                      })
-                    ));
+                    })
+                );
+
+                await Promise.all(sentimentPromises);
+                console.log("Created sentiment entries");
+
+                // Step 5: Create participant talk stats in batches
+                if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
+                    const talkStatPromises = data.talkRatio.participantStats.map(stat => 
+                        prisma.participantTalkStat.create({
+                            data: {
+                                name: stat.name,
+                                role: stat.role,
+                                wordCount: stat.wordCount,
+                                percentage: stat.percentage,
+                                analysisId: analysisRecord.id,
+                            }
+                        })
+                    );
+
+                    await Promise.all(talkStatPromises);
                     console.log("Created participant talk stats");
-                  }
-                  
-                  // Create objections in batch
-                  await Promise.all(data.objections.map(obj => {
-                    // Validate objection type before creating - ensures it matches database enum
-                    let objType = obj.type;
-                    // Ensure objType is one of the valid enum values in your database
-                    if (!["PRICE", "TIMING", "TRUST_RISK", "COMPETITION", "STAKEHOLDERS", "TECHNICAL", "IMPLEMENTATION", "OTHERS"].includes(objType)) {
-                      // Default to "OTHERS" if not a valid type
-                      objType = "OTHERS";
-                      console.log(`Invalid objection type "${obj.type}" changed to "OTHERS"`);
-                    }
-                    
-                    return tx.objection.create({
-                      data: {
-                        text: obj.text,
-                        time: obj.time,
-                        response: obj.response,
-                        effectiveness: obj.effectiveness,
-                        type: objType,
-                        success: obj.effectiveness > 0.6,
-                        analysisId: analysisRecordId,
-                      }
-                    });
-                  }));
-                  console.log("Created objection entries");
-                  
-                  // Update the asset status within the same transaction
-                  await tx.callAsset.update({
+                }
+
+                // Step 6: Create objections in batches
+                const objectionPromises = data.objections.map(obj => 
+                    prisma.objection.create({
+                        data: {
+                            text: obj.text,
+                            time: obj.time,
+                            response: obj.response,
+                            effectiveness: obj.effectiveness,
+                            type: obj.type,
+                            success: obj.effectiveness > 0.6,
+                            analysisId: analysisRecord.id,
+                        }
+                    })
+                );
+
+                await Promise.all(objectionPromises);
+                console.log("Created objection entries");
+
+                // Step 7: Update the asset status
+                await prisma.callAsset.update({
                     where: { id: asset.id },
                     data: { status: "SUCCESS" }
-                  });
-                }, {
-                  timeout: 15000  // Increase timeout to 15 seconds (from default 5s)
                 });
-                
-                // After transaction completes, fetch the complete analysis in a separate query
+
+                // Step 8: Fetch the complete analysis with relations
                 return prisma.analysis.findUnique({
-                  where: { id: analysisRecordId },
-                  include: {
-                    sentimentEntries: true,
-                    objections: true,
-                    participantTalkStats: true
-                  }
+                    where: { id: analysisRecord.id },
+                    include: {
+                        sentimentEntries: true,
+                        objections: true,
+                        participantTalkStats: true
+                    }
                 });
-              });
-              
-            
+            });
+
             // Return success response with the created asset and analysis
             res.status(201).json({ 
                 message: 'Asset created and analyzed successfully', 
                 asset,
                 analysis
             });
-            
+
         } catch (analysisError) {
             console.log("Error in analysis:", analysisError);
-            
+
             // Update asset status to FAIL if analysis failed
             await prisma.callAsset.update({
                 where: { id: asset.id },
                 data: { status: "FAIL" }
             });
-            
+
             // Propagate the error to be caught by the outer catch block
             throw analysisError;
         }
     } catch (error) {
         console.log("Error processing asset: ", error);
-        
+
         if (req.body && req.body.id) {
             try {
                 await prisma.callAsset.update({
@@ -245,7 +231,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 console.error("Failed to update asset status:", updateError);
             }
         }
-        
+
         // Send error response
         res.status(500).json({ 
             message: 'Failed to process asset',
@@ -254,38 +240,45 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
+// Define query parameters schema for pagination
+const getAssetsQuerySchema = z.object({
+    limit: z.coerce.number().positive().default(10),
+    page: z.coerce.number().positive().default(1),
+    organizationId: z.string().uuid().optional()
+});
+
 // get assets of a user
 assetsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     try {
         // @ts-ignore
         const userId = req.user?.id;
-        
+
         if (!userId) {
             res.status(401).json({ error: 'User authentication required' });
             return;
         }
-        
+
         // Validate query parameters
         const queryValidation = z.object({
             limit: z.coerce.number().positive().default(10),
             page: z.coerce.number().positive().default(1),
             organizationId: z.string().uuid().optional()
         }).safeParse(req.query);
-        
+
         if (!queryValidation.success) {
             res.status(400).json({ error: 'Invalid query parameters' });
             return;
         }
-        
+
         const { limit, page, organizationId } = queryValidation.data;
         const skip = (page - 1) * limit;
-        
+
         // Build the where clause based on parameters
         const whereClause: any = { userId };
         if (organizationId) {
             whereClause.organizationId = organizationId;
         }
-        
+
         // Get assets with pagination
         const [assets, total] = await Promise.all([
             prisma.callAsset.findMany({
@@ -305,7 +298,7 @@ assetsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
             }),
             prisma.callAsset.count({ where: whereClause })
         ]);
-        
+
         res.status(200).json({ 
             assets,
             pagination: {
@@ -329,20 +322,20 @@ assetsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
     try {
         // @ts-ignore
         const userId = req.user?.id;
-        
+
         if (!userId) {
             res.status(401).json({ error: 'User authentication required' });
             return;
         }
-        
+
         const assetId = req.params.id;
-        
+
         // Validate asset ID
         if (!assetId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(assetId)) {
             res.status(400).json({ error: 'Invalid asset ID format' });
             return;
         }
-        
+
         // Get the asset with its analysis
         const asset = await prisma.callAsset.findFirst({
             where: { 
@@ -359,12 +352,12 @@ assetsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
                 }
             }
         });
-        
+
         if (!asset) {
             res.status(404).json({ error: 'Asset not found' });
             return;
         }
-        
+
         res.status(200).json({ asset });
     } catch (error) {
         console.error("Error fetching asset:", error);
@@ -424,6 +417,3 @@ assetsRouter.delete('/:id', async (req: Request, res: Response): Promise<void> =
         });
     }
 });
-
-
-export default assetsRouter;
