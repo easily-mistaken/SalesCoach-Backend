@@ -376,10 +376,19 @@ const TranscriptAnalysis = z.object({
     .describe("3-5 actionable recommendations for the sales rep"),
 
   // Additional data for integration with UI components
-  sentimentEntries: z
-    .array(z.any())
-    .optional()
-    .describe("Formatted sentiment data for chart visualization"),
+sentimentEntries: z
+  .array(
+    z.object({
+      name: z.string().optional(),
+      time: z.string(),
+      score: z.number(),
+      positive: z.number().optional(),
+      neutral: z.number().optional(),
+      negative: z.number().optional()
+    })
+  )
+  .optional()
+  .describe("Formatted sentiment data for chart visualization"),
 
   overallSentiment: z
     .number()
@@ -390,9 +399,17 @@ const TranscriptAnalysis = z.object({
 
   // Required for AnalysisPage component
   participantTalkStats: z
-    .array(z.any())
-    .optional()
-    .describe("Talk stats formatted for UI components"),
+  .array(
+    z.object({
+      id: z.string().optional(),
+      name: z.string(), 
+      role: z.string(),
+      wordCount: z.number(),
+      percentage: z.number()
+    })
+  )
+  .optional()
+  .describe("Talk stats formatted for UI components"),
 });
 
 // Type based on Zod schema

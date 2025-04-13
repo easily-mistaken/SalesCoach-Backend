@@ -240,13 +240,6 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
     }
 });
 
-// Define query parameters schema for pagination
-const getAssetsQuerySchema = z.object({
-    limit: z.coerce.number().positive().default(10),
-    page: z.coerce.number().positive().default(1),
-    organizationId: z.string().uuid().optional()
-});
-
 // get assets of a user
 assetsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
     try {
