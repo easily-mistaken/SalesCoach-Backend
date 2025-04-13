@@ -659,7 +659,7 @@ dashboardRouter.get('/topicCoherence', async (req: Request, res: Response): Prom
   }
 });
 
-// NEW ENDPOINT: objection categories trends over time
+/// NEW ENDPOINT: objection categories trends over time
 dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
@@ -751,61 +751,74 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
       };
     }
 
-    // Fetch all analyses in the date range
+    // Step 1: Get all analyses with their dates within the range
     const analyses = await prisma.analysis.findMany({
       where: whereClause,
       select: {
-        date: true,
-        objections: {
-          select: {
-            type: true
-          }
-        }
+        id: true,
+        date: true
       },
       orderBy: {
         date: 'asc'
       }
     });
-
-    // Group objections by date and type
-    interface DateCounts {
-      [date: string]: {
-        PRICE: number;
-        TIMING: number;
-        TRUST_RISK: number;
-        COMPETITION: number;
-        STAKEHOLDERS: number;
-        OTHERS: number;
-        [key: string]: number;
-      };
+    
+    // If no data found, return empty result
+    if (analyses.length === 0) {
+      res.json([]);
+      return;
     }
 
-    const objectionsByDate: DateCounts = {};
-
-    analyses.forEach(analysis => {
-      // Format the date as YYYY-MM-DD
-      const dateStr = analysis.date.toISOString().split('T')[0];
-      
-      // Initialize the date entry if it doesn't exist
-      if (!objectionsByDate[dateStr]) {
-        objectionsByDate[dateStr] = {
-          PRICE: 0,
-          TIMING: 0,
-          TRUST_RISK: 0,
-          COMPETITION: 0,
-          STAKEHOLDERS: 0,
-          OTHERS: 0
-        };
+    // Step 2: Aggregate objections by type for each date
+    // We'll use a more sophisticated approach by using Prisma groupBy to get counts by date and type
+    
+    // Get all distinct dates from analyses
+    const uniqueDates = [...new Set(analyses.map(a => a.date.toISOString().split('T')[0]))];
+    
+    // Get all objections grouped by analysis ID
+    const objectionsByAnalysis = await prisma.objection.groupBy({
+      by: ['analysisId', 'type'],
+      where: {
+        analysisId: {
+          in: analyses.map(a => a.id)
+        }
+      },
+      _count: {
+        id: true
       }
-      
-      // Count objections by type
-      analysis.objections.forEach(objection => {
-        objectionsByDate[dateStr][objection.type]++;
-      });
     });
-
-    // Convert to array format for the chart component
-    const result = Object.entries(objectionsByDate).map(([date, counts]) => ({
+    
+    // Create a mapping of analysis ID to date
+    const analysisIdToDate = analyses.reduce((acc, analysis) => {
+      acc[analysis.id] = analysis.date.toISOString().split('T')[0];
+      return acc;
+    }, {} as Record<string, string>);
+    
+    // Initialize the result structure with all dates and zero counts
+    const dateResults: Record<string, Record<string, number>> = {};
+    
+    // Initialize all dates with zero counts for all objection types
+    uniqueDates.forEach(date => {
+      dateResults[date] = {
+        PRICE: 0,
+        TIMING: 0,
+        TRUST_RISK: 0,
+        COMPETITION: 0,
+        STAKEHOLDERS: 0,
+        OTHERS: 0
+      };
+    });
+    
+    // Fill in the actual counts from the grouped objections
+    objectionsByAnalysis.forEach(obj => {
+      const date = analysisIdToDate[obj.analysisId];
+      if (date && dateResults[date]) {
+        dateResults[date][obj.type] += obj._count.id;
+      }
+    });
+    
+    // Convert to the expected array format
+    const result = Object.entries(dateResults).map(([date, counts]) => ({
       date,
       price: counts.PRICE,
       timing: counts.TIMING,
@@ -814,22 +827,9 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
       stakeholders: counts.STAKEHOLDERS,
       other: counts.OTHERS
     }));
-
-    // Handle case with no data
-    if (result.length === 0) {
-      // Return empty data structure with today's date
-      const today = new Date().toISOString().split('T')[0];
-      res.json([{
-        date: today,
-        price: 0,
-        timing: 0,
-        trust: 0,
-        competition: 0,
-        stakeholders: 0,
-        other: 0
-      }]);
-      return;
-    }
+    
+    // Sort by date
+    result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Return the formatted data
     res.json(result);
