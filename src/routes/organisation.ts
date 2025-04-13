@@ -83,7 +83,15 @@ organisationRouter.get('/:id', async (req: Request, res: Response): Promise<void
                 organizationId
             },
             include: {
-                organization: true
+                organization: {
+                    include: {
+                        users: {
+                            include: {
+                                user: true
+                            }
+                        }
+                    }
+                }
             }
         });
 
