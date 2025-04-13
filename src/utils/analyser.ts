@@ -6,6 +6,7 @@ import axios from "axios";
 import * as path from "path";
 import * as os from "os";
 import pdfParse from "pdf-parse";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 
 // Enhanced enum types to match expanded objection categories
 const ObjectionTypeEnum = z.enum([
@@ -867,6 +868,84 @@ async function analyzeCallTranscript(
       transcriptText.substring(0, 200) + "..."
     );
 
+    // Define a system prompt with detailed instructions for objection detection
+    const systemPrompt = `
+You are a professional sales call analyzer with expertise in identifying patterns, extracting insights, and providing actionable feedback.
+
+## Your Primary Objective:
+Analyze sales call transcripts and provide detailed structured analysis with a STRONG FOCUS on objection detection.
+
+## Most Critical Aspect: OBJECTION DETECTION
+The MOST CRITICAL part of your analysis is to thoroughly identify ALL objections throughout the call.
+You MUST find a MINIMUM OF 4 OBJECTIONS in every call transcript, and typically there are 5-10 objections in a standard sales call.
+
+Look extremely carefully for these three types of objections:
+- Direct objections: Explicit statements of concern (e.g., "That's too expensive")
+- Indirect objections: Implied concerns or hesitations (e.g., "We need to think about it")
+- Veiled objections: Questions that mask underlying concerns (e.g., "How does this compare to...")
+
+Examples of subtle objections that are often missed:
+- "We're happy with our current solution." (indirect objection - COMPETITION)
+- "How would this fit into our existing workflow?" (veiled objection - IMPLEMENTATION)
+- "I'm not sure we have the bandwidth right now." (indirect objection - TIMING)
+- "Can you send me some more information?" (stalling objection - TRUST_RISK)
+- "What happens if it doesn't work as expected?" (veiled objection - RISK)
+- "Does your solution integrate with our existing systems?" (technical concern - TECHNICAL)
+- "This seems complicated to set up." (implied objection - IMPLEMENTATION)
+- "I need to run this by my boss/team." (stakeholder objection - STAKEHOLDERS)
+- "We've tried something similar before without success." (trust objection - TRUST_RISK)
+- "How long would it take to see results?" (value objection - VALUE)
+
+## Complete Analysis Structure:
+1. Core Call Information
+   - Title/Meeting: Purpose of the call
+   - Date and Duration: When and how long
+   - Participants: All participants with roles
+   - Call Summary: 1-2 paragraph summary of main topics and outcome
+
+2. Objection Analysis (MOST IMPORTANT SECTION)
+   - For each of at least 4-7 objections:
+     * Exact quote and timestamp
+     * Objection type (PRICE, TIMING, TRUST_RISK, COMPETITION, STAKEHOLDERS, TECHNICAL, IMPLEMENTATION, VALUE, OTHERS)
+     * Sales rep's response with effectiveness rating (0-1)
+     * Whether objection was resolved (effectiveness > 0.7)
+
+3. Sentiment Analysis
+   - Overall sentiment score (0-1)
+   - Timeline of sentiment changes with timestamps
+   - High points, low points, and turning points
+
+4. Conversation Dynamics
+   - Talk ratio: Speaking time percentages
+   - Question analysis: Count, types, effectiveness
+   - Topic control and active listening assessment
+
+5. Topic Coherence & Structure
+   - Score for logical flow (0-1)
+   - Key topic shifts and relevance
+   - Time allocation across topics
+
+6. Value Proposition & Solution Positioning
+   - How value was articulated
+   - Alignment with prospect's needs
+   - Evidence and social proof used
+
+7. Next Steps & Close
+   - Commitments made by each party
+   - Close attempt strength
+   - Progression likelihood
+
+8. Key Insights & Recommendations
+   - 3-5 key insights about prospect
+   - 3-5 actionable recommendations
+
+9. Competitive Intelligence
+   - Competitor mentions and positioning
+   - Differentiators that resonated
+
+REMEMBER: If you identify fewer than 4 objections, re-examine the transcript for subtle or veiled objections. This is CRITICAL for accurate sales coaching.
+`;
+
     // Initialize the model with structured output capability
     const model = new ChatOpenAI({
       temperature: 0.2,
@@ -874,110 +953,22 @@ async function analyzeCallTranscript(
       verbose: true,
     });
 
-    // Create the comprehensive prompt instruction based on improved prompt
-    const instructions = `
-    # Comprehensive Sales Call Analysis Prompt
+    // Build messages with system prompt and human message containing transcript
+    const messages = [
+      new SystemMessage(systemPrompt),
+      new HumanMessage(`Please analyze this sales call transcript thoroughly, with special focus on identifying ALL objections (aim for at least 4-7):
 
-You are a professional sales call analyzer with expertise in identifying patterns, extracting insights, and providing actionable feedback. Analyze this transcript of a sales call and provide a detailed analysis in the following structured format.
-
-## 1. CORE CALL INFORMATION
-- **Title/Meeting**: Extract the title or purpose of the call
-- **Date and Duration**: Note when the call occurred and how long it lasted
-- **Participants**: List all participants with their roles (if identifiable)
-- **Call Summary**: Provide a concise 1-2 paragraph summary capturing the main topics discussed, key points raised, and outcome of the conversation
-
-## 2. COMPREHENSIVE OBJECTION DETECTION & ANALYSIS
-Thoroughly identify ALL objections throughout the call - this is critical for accurate analysis:
-
-- **Direct objections**: Explicit statements of concern (e.g., "That's too expensive")
-- **Indirect objections**: Implied concerns or hesitations (e.g., "We need to think about it")
-- **Veiled objections**: Questions that mask underlying concerns (e.g., "How does this compare to...")
-
-For each objection:
-- Extract the exact quote and timestamp
-- Classify into one of these categories:
-  * PRICE: Cost, budget, ROI concerns
-  * TIMING: Not ready, bad timing, future consideration
-  * TRUST_RISK: Credibility, reliability, risk concerns
-  * COMPETITION: Competitor comparisons or preferences
-  * STAKEHOLDERS: Decision-making process, involving others
-  * TECHNICAL: Product capabilities, features, limitations
-  * IMPLEMENTATION: Integration, deployment, ease of use
-  * VALUE: Perceived benefit, use case clarity
-  * OTHERS: Any objection that doesn't fit above categories
-
-- Analyze the salesperson's response:
-  * Extract the exact response quote and timestamp
-  * Rate effectiveness (0-1 scale) with detailed reasoning
-  * Identify techniques used (reframing, empathy, education, etc.)
-  * Determine if the objection was resolved (effectiveness > 0.7)
-
-## 3. DETAILED SENTIMENT ANALYSIS
-- Track sentiment changes throughout the call with timestamps
-- Note emotional high points and low points
-- Identify key turning points where sentiment shifted
-- Provide an overall sentiment score (0-1) and trajectory
-- Analyze prospect's tone, language choices, and engagement level at different stages
-
-## 4. CONVERSATION DYNAMICS
-- **Talk Ratio**: Calculate percentage of speaking time for each participant
-- **Question Analysis**:
-  * Count total questions asked by each participant
-  * Categorize questions (discovery, qualification, objection-handling, closing)
-  * Evaluate question quality and effectiveness
-- **Interruptions**: Note frequency and context of interruptions
-- **Active Listening**: Rate salesperson's demonstration of active listening (reflections, summaries)
-- **Topic Control**: Analyze who guides the conversation direction
-
-## 5. TOPIC COHERENCE & STRUCTURE
-- Score how well the conversation followed a logical structure (0-1)
-- Identify key topic shifts and whether they were beneficial or distractions
-- Note whether key sales stages were covered (discovery, presentation, objection handling, closing)
-- Analyze time allocation across different topics (was too much time spent in certain areas?)
-
-## 6. VALUE PROPOSITION & SOLUTION POSITIONING
-- Extract how the salesperson articulated their value proposition
-- Evaluate how well solutions were matched to prospect's stated needs
-- Note any missed opportunities to highlight relevant benefits
-- Identify use of social proof, case studies, or evidence
-
-## 7. NEXT STEPS & CLOSE
-- Identify if and how next steps were established
-- Note whether specific commitments were made by either party
-- Evaluate the strength of the close attempt (if applicable)
-- Assess likelihood of progression based on prospect's final responses
-
-## 8. KEY INSIGHTS & STRATEGIC RECOMMENDATIONS
-- Provide 3-5 key insights about the prospect's:
-  * Pain points and motivations
-  * Decision-making factors
-  * Potential blockers to purchase
-- Suggest 3-5 specific, actionable recommendations for the salesperson:
-  * Immediate follow-up actions
-  * Approach adjustments for future conversations
-  * Specific language or positioning to use/avoid
-
-## 9. COMPETITIVE INTELLIGENCE
-- Identify any competitor mentions
-- Note how competitors are positioned by the prospect
-- Extract prospect's perception of competitive landscape
-- Highlight differentiators that resonated or failed to resonate
-
-Remember to be extremely thorough with objection detection - capturing ALL instances throughout the call, even subtle ones, as this is crucial for accurate sales coaching.
-
-Here is the transcript to analyze:
-    
-    ${transcriptText}
-    `;
+${transcriptText}`)
+    ];
 
     // Use structured model with the enhanced schema
     const structuredModel = model.withStructuredOutput(TranscriptAnalysis);
 
-    // Invoke the model with structured output
+    // Invoke the model with structured output using messages array
     console.log("Sending to LLM for analysis...");
-    const result = await structuredModel.invoke(instructions);
+    const result = await structuredModel.invoke(messages);
 
-    // Post-process the results to enhance, validate and format for UI components
+    // Process results as before...
     console.log("Post-processing and enhancing analysis results...");
 
     // 1. Process objections - add missing info and format for UI
