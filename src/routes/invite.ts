@@ -68,7 +68,7 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
         ? `${invite.invitedByUser.firstName} ${invite.invitedByUser.lastName}`
         : null,
       organizationName: invite.organization.name,
-      teams: invite.teams.map(team => ({
+      teams: invite.teams.map((team) => ({
         id: team.team.id,
         name: team.team.name,
       })),
@@ -82,92 +82,97 @@ inviteRouter.get("/", async (req: Request, res: Response): Promise<void> => {
 });
 
 // Create a new invitation
-inviteRouter.post("/", authMiddleware, async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { email, teamIds, role, organizationId } = req.body;
-    // @ts-ignore
-    const user = req.user;
-
-    // Check if the user is part of the organization
-    const userOrg = await prisma.userOrganization.findUnique({
-      where: {
-        userId_organizationId: {
-          userId: user.id,
-          organizationId: organizationId,
-        },
-      },
-      include: {
-        organization: {
-          select: {
-            name: true,
-          },
-        },
-        user: {
-          select: {
-            firstName: true,
-            lastName: true,
-          },
-        },
-      },
-    });
-
-    if (!userOrg) {
-      res
-        .status(403)
-        .json({ error: "User does not belong to the organization" });
-      return;
-    }
-
-    // Check if the user's role is either ADMIN or MANAGER
-    if (userOrg?.role !== "ADMIN" && userOrg?.role !== "MANAGER") {
-      res.status(403).json({ error: "Not enough permissions" });
-      return;
-    }
-
-    const invite = await prisma.invite.create({
-      data: {
-        email,
-        role,
-        invitedBy: user.id,
-        organizationId: organizationId,
-        teams: {
-          create: teamIds.map((teamId: string) => ({
-            team: {
-              connect: { id: teamId },
-            },
-          })),
-        },
-      },
-    });
-
-    // Send the invitation email
+inviteRouter.post(
+  "/",
+  authMiddleware,
+  async (req: Request, res: Response): Promise<void> => {
     try {
-      const inviterName = `${userOrg.user.firstName} ${userOrg.user.lastName}`;
-      await sendInviteEmail({
-        email,
-        inviteId: invite.id,
-        organizationName: userOrg.organization.name,
-        inviterName,
-        inviterRole: userOrg.role,
+      const { email, teamIds, role, organizationId } = req.body;
+      // @ts-ignore
+      const user = req.user;
+
+      // Check if the user is part of the organization
+      const userOrg = await prisma.userOrganization.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: user.id,
+            organizationId: organizationId,
+          },
+        },
+        include: {
+          organization: {
+            select: {
+              name: true,
+            },
+          },
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
       });
 
-      res
-        .status(201)
-        .json({ message: "Invite sent successfully", inviteId: invite.id });
-    } catch (emailError) {
-      console.error("Failed to send invitation email:", emailError);
-      // Even if email fails, the invite is created in the DB
-      res.status(201).json({
-        message: "Invite created but email delivery failed",
-        inviteId: invite.id,
-        emailError: true,
+      if (!userOrg) {
+        res
+          .status(403)
+          .json({ error: "User does not belong to the organization" });
+        return;
+      }
+
+      // Check if the user's role is either ADMIN or MANAGER
+      if (userOrg?.role !== "ADMIN" && userOrg?.role !== "MANAGER") {
+        res.status(403).json({ error: "Not enough permissions" });
+        return;
+      }
+
+      const invite = await prisma.invite.create({
+        data: {
+          email,
+          role,
+          invitedBy: user.id,
+          organizationId: organizationId,
+          teams: {
+            create: teamIds.map((teamId: string) => ({
+              team: {
+                connect: { id: teamId },
+              },
+            })),
+          },
+        },
       });
+
+      // Send the invitation email
+      try {
+        const inviterName =
+          `${userOrg.user.firstName || ""} ${userOrg.user.lastName || ""}`.trim();
+        await sendInviteEmail({
+          email,
+          inviteId: invite.id,
+          organizationName: userOrg.organization.name,
+          inviterName,
+          inviterRole: userOrg.role,
+        });
+
+        res
+          .status(201)
+          .json({ message: "Invite sent successfully", inviteId: invite.id });
+      } catch (emailError) {
+        console.error("Failed to send invitation email:", emailError);
+        // Even if email fails, the invite is created in the DB
+        res.status(201).json({
+          message: "Invite created but email delivery failed",
+          inviteId: invite.id,
+          emailError: true,
+        });
+      }
+    } catch (error) {
+      console.error("Error creating invite:", error);
+      res.status(500).json({ error: "Failed to create invite" });
     }
-  } catch (error) {
-    console.error("Error creating invite:", error);
-    res.status(500).json({ error: "Failed to create invite" });
   }
-});
+);
 
 inviteRouter.post(
   "/accept",
@@ -177,9 +182,9 @@ inviteRouter.post(
       // Validate request data
       const validationResult = acceptInviteSchema.safeParse(req.body);
       if (!validationResult.success) {
-        res.status(400).json({ 
-          error: "Invalid request data", 
-          details: validationResult.error.errors 
+        res.status(400).json({
+          error: "Invalid request data",
+          details: validationResult.error.errors,
         });
         return;
       }
@@ -233,7 +238,7 @@ inviteRouter.post(
 
         // Add the user to the teams they were invited to
         if (invite.teams.length > 0) {
-          const teamConnections = invite.teams.map(team => ({
+          const teamConnections = invite.teams.map((team) => ({
             userId,
             organizationId: invite.organizationId,
             teamId: team.teamId,
@@ -251,9 +256,9 @@ inviteRouter.post(
         });
       });
 
-      res.status(200).json({ 
-        message: "Invite accepted successfully", 
-        organizationId: invite.organizationId 
+      res.status(200).json({
+        message: "Invite accepted successfully",
+        organizationId: invite.organizationId,
       });
     } catch (error) {
       console.error("Error accepting invite:", error);
