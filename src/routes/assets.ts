@@ -1,54 +1,54 @@
 import { Router, Request, Response } from 'express';
-import {  CallAssetType } from '@prisma/client';
+import { CallAssetType } from '@prisma/client';
 import { getTextFromPdf, analyzeCallTranscript } from '../utils/analyser';
 import { z } from 'zod';
-import {prisma} from '../utils/prisma';
+import { prisma } from '../utils/prisma';
 
 const assetsRouter = Router();
 
 // Input validation schemas
 const createAssetSchema = z.object({
-  content: z.string().min(1, "Content is required"),
-  type: z.enum(["FILE", "TEXT"]),
-  organizationId: z.string().uuid().optional(),
-  name: z.string().optional()
+    content: z.string().min(1, "Content is required"),
+    type: z.enum(["FILE", "TEXT"]),
+    organizationId: z.string().uuid().optional(),
+    name: z.string().optional()
 });
 
 // Helper function to validate request body
 function validateBody<T extends z.ZodTypeAny>(
-  schema: T,
-  req: Request
+    schema: T,
+    req: Request
 ): { success: boolean; data?: z.infer<T>; error?: string } {
-  try {
-    const result = schema.parse(req.body);
-    return { success: true, data: result };
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      const errorMessages = error.errors.map(err => `${err.path}: ${err.message}`).join(', ');
-      return { success: false, error: errorMessages };
+    try {
+        const result = schema.parse(req.body);
+        return { success: true, data: result };
+    } catch (error) {
+        if (error instanceof z.ZodError) {
+            const errorMessages = error.errors.map(err => `${err.path}: ${err.message}`).join(', ');
+            return { success: false, error: errorMessages };
+        }
+        return { success: false, error: 'Invalid input parameters' };
     }
-    return { success: false, error: 'Invalid input parameters' };
-  }
 }
 
 // Helper function to retry a function with exponential backoff
 async function retryWithBackoff(fn: any, maxRetries = 3, initialDelay = 1000) {
-  let retries = 0;
+    let retries = 0;
 
-  while (true) {
-    try {
-      return await fn();
-    } catch (error) {
-      retries++;
-      if (retries > maxRetries) {
-        throw error;
-      }
+    while (true) {
+        try {
+            return await fn();
+        } catch (error) {
+            retries++;
+            if (retries > maxRetries) {
+                throw error;
+            }
 
-      const delay = initialDelay * Math.pow(2, retries - 1);
-      console.log(`Retrying operation after ${delay}ms (attempt ${retries}/${maxRetries})...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+            const delay = initialDelay * Math.pow(2, retries - 1);
+            console.log(`Retrying operation after ${delay}ms (attempt ${retries}/${maxRetries})...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
     }
-  }
 }
 
 // upload asset
@@ -73,7 +73,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
 
         // Step 1: Create the asset
         const asset = await prisma.callAsset.create({
-            data: { 
+            data: {
                 content,
                 type: type as CallAssetType,
                 name,
@@ -109,7 +109,36 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             // Parse the date string to a proper DateTime format
             const analysisDate = new Date(data.date);
 
-            // Step 3: Create the analysis separately (no transaction)
+            // Step 3: First check if analysis already exists for this asset
+            const existingAnalysis = await prisma.analysis.findUnique({
+                where: {
+                    callAssetId: asset.id
+                }
+            });
+
+            if (existingAnalysis) {
+                console.log(`Analysis already exists for asset ${asset.id}, skipping creation`);
+
+                // Just fetch the complete analysis
+                const analysis = await prisma.analysis.findUnique({
+                    where: { id: existingAnalysis.id },
+                    include: {
+                        sentimentEntries: true,
+                        objections: true,
+                        participantTalkStats: true
+                    }
+                });
+
+                // Return success with existing analysis
+                res.status(201).json({
+                    message: 'Asset retrieved with existing analysis',
+                    asset,
+                    analysis
+                });
+                return;
+            }
+
+            // If no existing analysis, create it
             const analysis = await retryWithBackoff(async () => {
                 // Create the main analysis record first
                 const analysisRecord = await prisma.analysis.create({
@@ -133,7 +162,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 console.log("Created analysis record:", analysisRecord.id);
 
                 // Step 4: Create sentiment entries in batches
-                const sentimentPromises = data.sentiment.timeline.map(point => 
+                const sentimentPromises = data.sentiment.timeline.map(point =>
                     prisma.sentimentEntry.create({
                         data: {
                             time: point.time,
@@ -148,7 +177,7 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
 
                 // Step 5: Create participant talk stats in batches
                 if (data.talkRatio?.participantStats && data.talkRatio.participantStats.length > 0) {
-                    const talkStatPromises = data.talkRatio.participantStats.map(stat => 
+                    const talkStatPromises = data.talkRatio.participantStats.map(stat =>
                         prisma.participantTalkStat.create({
                             data: {
                                 name: stat.name,
@@ -165,19 +194,28 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
                 }
 
                 // Step 6: Create objections in batches
-                const objectionPromises = data.objections.map(obj => 
-                    prisma.objection.create({
+                // Add validation to ensure objection types are valid
+                const objectionPromises = data.objections.map(obj => {
+                    // Ensure objection type is valid according to your schema
+                    let objType = obj.type;
+                    // Check if it's a valid type for your database
+                    if (!["PRICE", "TIMING", "TRUST_RISK", "COMPETITION", "STAKEHOLDERS", "TECHNICAL", "IMPLEMENTATION", "OTHERS"].includes(objType)) {
+                        objType = "OTHERS";
+                        console.log(`Converting invalid objection type "${obj.type}" to "OTHERS"`);
+                    }
+
+                    return prisma.objection.create({
                         data: {
                             text: obj.text,
                             time: obj.time,
                             response: obj.response,
                             effectiveness: obj.effectiveness,
-                            type: obj.type,
+                            type: objType,
                             success: obj.effectiveness > 0.6,
                             analysisId: analysisRecord.id,
                         }
-                    })
-                );
+                    });
+                });
 
                 await Promise.all(objectionPromises);
                 console.log("Created objection entries");
@@ -200,8 +238,8 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             });
 
             // Return success response with the created asset and analysis
-            res.status(201).json({ 
-                message: 'Asset created and analyzed successfully', 
+            res.status(201).json({
+                message: 'Asset created and analyzed successfully',
                 asset,
                 analysis
             });
@@ -233,9 +271,9 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
         }
 
         // Send error response
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Failed to process asset',
-            error: error instanceof Error ? error.message : 'Unknown error' 
+            error: error instanceof Error ? error.message : 'Unknown error'
         });
     }
 });
@@ -299,7 +337,7 @@ assetsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
             prisma.callAsset.count({ where: whereClause })
         ]);
 
-        res.status(200).json({ 
+        res.status(200).json({
             assets,
             pagination: {
                 total,
@@ -310,9 +348,9 @@ assetsRouter.get('/', async (req: Request, res: Response): Promise<void> => {
         });
     } catch (error) {
         console.error("Error fetching assets:", error);
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Failed to fetch assets',
-            error: error instanceof Error ? error.message : 'Unknown error' 
+            error: error instanceof Error ? error.message : 'Unknown error'
         });
     }
 });
@@ -338,7 +376,7 @@ assetsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
 
         // Get the asset with its analysis
         const asset = await prisma.callAsset.findFirst({
-            where: { 
+            where: {
                 id: assetId,
                 userId // Ensure the asset belongs to the requesting user
             },
@@ -361,9 +399,9 @@ assetsRouter.get('/:id', async (req: Request, res: Response): Promise<void> => {
         res.status(200).json({ asset });
     } catch (error) {
         console.error("Error fetching asset:", error);
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Failed to fetch asset',
-            error: error instanceof Error ? error.message : 'Unknown error' 
+            error: error instanceof Error ? error.message : 'Unknown error'
         });
     }
 });
