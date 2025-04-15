@@ -27,10 +27,6 @@ const SentimentPoint = z.object({
   score: z
     .number()
     .describe("Sentiment score from 0 to 1, where 1 is most positive"),
-  label: z
-    .string()
-    .optional()
-    .describe("Optional label for significant moments"),
 });
 
 // Enhanced objection schema with more detailed analysis
@@ -234,107 +230,59 @@ const TranscriptAnalysis = z.object({
     .describe("Names and roles of call participants"),
   summary: z.string().describe("Concise one-paragraph summary of the call"),
 
-  // Enhanced sentiment analysis
+  // Simplified sentiment analysis
   sentiment: z.object({
-    overall: z
-      .number()
-      .describe("Overall sentiment score for the entire call"),
+    overall: z.number().describe("Overall sentiment score for the entire call"),
     timeline: z
       .array(SentimentPoint)
       .describe("Sentiment scores at regular intervals throughout the call"),
-    highPoints: z
-      .array(
-        z.object({
-          time: z.string().describe("Timestamp of high point (MM:SS format)"),
-          description: z.string().describe("What happened at this high point"),
-          score: z
-            .number()
-            .describe("Sentiment score at this point"),
-        })
-      )
-      .optional()
-      .describe("Emotional high points during the call"),
-    lowPoints: z
-      .array(
-        z.object({
-          time: z.string().describe("Timestamp of low point (MM:SS format)"),
-          description: z.string().describe("What happened at this low point"),
-          score: z
-            .number()
-            .describe("Sentiment score at this point"),
-        })
-      )
-      .optional()
-      .describe("Emotional low points during the call"),
-    turningPoints: z
-      .array(
-        z.object({
-          time: z
-            .string()
-            .describe("Timestamp of turning point (MM:SS format)"),
-          description: z
-            .string()
-            .describe("What changed at this turning point"),
-          direction: z
-            .string()
-            .describe("Direction of sentiment change (positive/negative)"),
-        })
-      )
-      .optional()
-      .describe("Key turning points in sentiment"),
   }),
 
-  // Enhanced talk ratio analysis
-  talkRatio: z
-    .object({
-      salesRepPercentage: z
-        .number()
-        .describe(
-          "Percentage of the conversation where the sales rep was talking"
-        ),
-      participantStats: z
-        .array(ParticipantTalkStat)
-        .describe("Detailed statistics about each participant's talking time"),
-      idealRatio: z
-        .boolean()
-        .optional()
-        .describe("Whether the talk ratio was in the ideal range (rep < 60%)"),
-    })
-    .describe("Analysis of who talked how much during the call"),
+  // Simplified talk ratio analysis
+  talkRatio: z.object({
+    salesRepPercentage: z
+      .number()
+      .describe(
+        "Percentage of the conversation where the sales rep was talking"
+      ),
+    participantStats: z
+      .array(ParticipantTalkStat)
+      .describe("Detailed statistics about each participant's talking time"),
+  }),
 
-  // Enhanced questions analysis
-  questionsAnalysis: QuestionAnalysis.describe(
-    "Analysis of questions asked during the call"
-  ),
+  // Simplified questions analysis
+  questionsAnalysis: z.object({
+    totalQuestions: z
+      .number()
+      .describe("Total number of questions asked in the call"),
+    questionsPerMinute: z
+      .number()
+      .describe("Rate of questions asked per minute of the call"),
+    salesRepQuestions: z
+      .number()
+      .describe("Number of questions asked by the sales rep"),
+    effectivenessScore: z
+      .number()
+      .describe("Overall effectiveness of questioning strategy (0-1)"),
+  }),
 
-  // Enhanced topic coherence
-  topicCoherence: TopicCoherence.describe(
-    "Analysis of how well the conversation stayed on relevant topics"
-  ),
+  // Simplified topic coherence
+  topicCoherence: z.object({
+    score: z
+      .number()
+      .describe(
+        "Score from 0-1 indicating how well the conversation stayed on relevant topics"
+      ),
+  }),
 
   // Core objections analysis
   objections: z
     .array(Objection)
     .describe("List of objections raised and responses given"),
 
-  // Category counts for dashboard cards
+  // Simplified for dashboard cards
   categoryCounts: CategoryCounts.optional().describe(
     "Summary counts of objections by category for dashboard"
-  ),
-
-  // Value proposition analysis
-  valueProposition: ValueProposition.optional().describe(
-    "Analysis of how well value was communicated"
-  ),
-
-  // Competitive intelligence
-  competitiveIntelligence: CompetitiveIntelligence.optional().describe(
-    "Analysis of competitor mentions and positioning"
-  ),
-
-  // Next steps and close analysis
-  nextSteps: NextSteps.optional().describe(
-    "Analysis of established next steps and close"
   ),
 
   // Key insights and recommendations
@@ -347,16 +295,12 @@ const TranscriptAnalysis = z.object({
     .array(z.string())
     .describe("3-5 actionable recommendations for the sales rep"),
 
-  // Additional data for integration with UI components
+  // Simple values for visualization
   sentimentEntries: z
     .array(
       z.object({
-        name: z.string().optional(),
         time: z.string(),
         score: z.number(),
-        positive: z.number().optional(),
-        neutral: z.number().optional(),
-        negative: z.number().optional(),
       })
     )
     .optional()
@@ -371,7 +315,6 @@ const TranscriptAnalysis = z.object({
   participantTalkStats: z
     .array(
       z.object({
-        id: z.string().optional(),
         name: z.string(),
         role: z.string(),
         wordCount: z.number(),
@@ -976,11 +919,9 @@ ${transcriptText}`),
       overallSentiment: result.overallSentiment || result.sentiment.overall,
       talkRatio: {
         ...result.talkRatio,
-        idealRatio:
-          result.talkRatio.idealRatio !== undefined
-            ? result.talkRatio.idealRatio
-            : result.talkRatio.salesRepPercentage < 60,
       },
+      // Add a separate property instead:
+      talkRatioIdeal: result.talkRatio.salesRepPercentage < 60,
       questionsAnalysis: {
         ...result.questionsAnalysis,
         questionsPerMinute:
