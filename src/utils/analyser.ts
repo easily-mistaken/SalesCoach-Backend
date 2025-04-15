@@ -377,19 +377,19 @@ const TranscriptAnalysis = z.object({
     .describe("3-5 actionable recommendations for the sales rep"),
 
   // Additional data for integration with UI components
-sentimentEntries: z
-  .array(
-    z.object({
-      name: z.string().optional(),
-      time: z.string(),
-      score: z.number(),
-      positive: z.number().optional(),
-      neutral: z.number().optional(),
-      negative: z.number().optional()
-    })
-  )
-  .optional()
-  .describe("Formatted sentiment data for chart visualization"),
+  sentimentEntries: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        time: z.string(),
+        score: z.number(),
+        positive: z.number().optional(),
+        neutral: z.number().optional(),
+        negative: z.number().optional(),
+      })
+    )
+    .optional()
+    .describe("Formatted sentiment data for chart visualization"),
 
   overallSentiment: z
     .number()
@@ -400,17 +400,17 @@ sentimentEntries: z
 
   // Required for AnalysisPage component
   participantTalkStats: z
-  .array(
-    z.object({
-      id: z.string().optional(),
-      name: z.string(), 
-      role: z.string(),
-      wordCount: z.number(),
-      percentage: z.number()
-    })
-  )
-  .optional()
-  .describe("Talk stats formatted for UI components"),
+    .array(
+      z.object({
+        id: z.string().optional(),
+        name: z.string(),
+        role: z.string(),
+        wordCount: z.number(),
+        percentage: z.number(),
+      })
+    )
+    .optional()
+    .describe("Talk stats formatted for UI components"),
 });
 
 // Type based on Zod schema
@@ -917,7 +917,7 @@ IMPORTANT: If you initially identify fewer than 4 objections, re-examine the tra
     // Initialize the model with structured output capability
     const model = new ChatOpenAI({
       temperature: 0.2,
-      modelName: "gpt-4-turbo",
+      modelName: "gpt-4o-mini",
       verbose: true,
     });
 
@@ -926,7 +926,7 @@ IMPORTANT: If you initially identify fewer than 4 objections, re-examine the tra
       new SystemMessage(systemPrompt),
       new HumanMessage(`Please analyze this sales call transcript thoroughly, with special focus on identifying ALL objections (find at least 4-7):
 
-${transcriptText}`)
+${transcriptText}`),
     ];
 
     // Use structured model with the enhanced schema
@@ -938,7 +938,7 @@ ${transcriptText}`)
 
     // Continue with your existing post-processing code
     console.log("Post-processing and enhancing analysis results...");
-    
+
     // 1. Process objections - add missing info and format for UI
     const processedObjections = result.objections.map((objection, index) => {
       // Generate ID if missing
