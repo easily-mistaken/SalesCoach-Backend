@@ -26,8 +26,6 @@ const SentimentPoint = z.object({
   time: z.string().describe("Timestamp in the format MM:SS"),
   score: z
     .number()
-    .min(0)
-    .max(1)
     .describe("Sentiment score from 0 to 1, where 1 is most positive"),
   label: z
     .string()
@@ -51,8 +49,6 @@ const Objection = z.object({
     .describe("Timestamp when the response occurred (MM:SS format)"),
   effectiveness: z
     .number()
-    .min(0)
-    .max(1)
     .describe("Rating of how effective the response was (0-1)"),
   type: ObjectionTypeEnum.describe(
     "Category of the objection (PRICE, TIMING, etc.)"
@@ -85,8 +81,6 @@ const ParticipantTalkStat = z.object({
   wordCount: z.number().describe("Number of words spoken by this participant"),
   percentage: z
     .number()
-    .min(0)
-    .max(100)
     .describe("Percentage of total words spoken by this participant"),
 });
 
@@ -97,7 +91,6 @@ const QuestionAnalysis = z.object({
     .describe("Total number of questions asked in the call"),
   questionsPerMinute: z
     .number()
-    .min(0)
     .describe("Rate of questions asked per minute of the call"),
   salesRepQuestions: z
     .number()
@@ -116,8 +109,6 @@ const QuestionAnalysis = z.object({
     .describe("Breakdown of question types"),
   effectivenessScore: z
     .number()
-    .min(0)
-    .max(1)
     .describe("Overall effectiveness of questioning strategy (0-1)"),
 });
 
@@ -125,8 +116,6 @@ const QuestionAnalysis = z.object({
 const TopicCoherence = z.object({
   score: z
     .number()
-    .min(0)
-    .max(1)
     .describe(
       "Score from 0-1 indicating how well the conversation stayed on relevant topics"
     ),
@@ -138,8 +127,6 @@ const TopicCoherence = z.object({
         toTopic: z.string().describe("New topic of conversation"),
         relevance: z
           .number()
-          .min(0)
-          .max(1)
           .describe("How relevant the new topic was to sales objectives (0-1)"),
       })
     )
@@ -169,8 +156,6 @@ const CompetitiveIntelligence = z.object({
         feature: z.string().describe("Differentiating feature/capability"),
         reception: z
           .number()
-          .min(-1)
-          .max(1)
           .describe(
             "How well it resonated (-1 negative, 0 neutral, 1 positive)"
           ),
@@ -187,8 +172,6 @@ const ValueProposition = z.object({
     .describe("How the salesperson articulated the value proposition"),
   alignment: z
     .number()
-    .min(0)
-    .max(1)
     .describe("How well solution matched prospect's stated needs (0-1)"),
   missedOpportunities: z
     .array(z.string())
@@ -217,14 +200,10 @@ const NextSteps = z.object({
     .describe("Specific commitments made by either party"),
   closeStrength: z
     .number()
-    .min(0)
-    .max(1)
     .optional()
     .describe("Strength of the close attempt (0-1)"),
   progressionLikelihood: z
     .number()
-    .min(0)
-    .max(1)
     .describe("Likelihood of deal progression based on call (0-1)"),
 });
 
@@ -259,8 +238,6 @@ const TranscriptAnalysis = z.object({
   sentiment: z.object({
     overall: z
       .number()
-      .min(0)
-      .max(1)
       .describe("Overall sentiment score for the entire call"),
     timeline: z
       .array(SentimentPoint)
@@ -272,8 +249,6 @@ const TranscriptAnalysis = z.object({
           description: z.string().describe("What happened at this high point"),
           score: z
             .number()
-            .min(0)
-            .max(1)
             .describe("Sentiment score at this point"),
         })
       )
@@ -286,8 +261,6 @@ const TranscriptAnalysis = z.object({
           description: z.string().describe("What happened at this low point"),
           score: z
             .number()
-            .min(0)
-            .max(1)
             .describe("Sentiment score at this point"),
         })
       )
@@ -316,8 +289,6 @@ const TranscriptAnalysis = z.object({
     .object({
       salesRepPercentage: z
         .number()
-        .min(0)
-        .max(100)
         .describe(
           "Percentage of the conversation where the sales rep was talking"
         ),
@@ -393,8 +364,6 @@ const TranscriptAnalysis = z.object({
 
   overallSentiment: z
     .number()
-    .min(0)
-    .max(1)
     .optional()
     .describe("Simplified overall sentiment score"),
 
