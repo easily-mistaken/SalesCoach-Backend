@@ -606,7 +606,8 @@ function determineObjectionType(
     lowerText.includes("why should we") ||
     lowerText.includes("what's in it for")
   ) {
-    return "VALUE";
+    // Map VALUE objections to PRICE since they are related to value proposition
+    return "PRICE";
   } else {
     return "OTHERS";
   }
