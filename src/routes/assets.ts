@@ -109,28 +109,68 @@ assetsRouter.post('/', async (req: Request, res: Response): Promise<void> => {
             // Parse the date string to a proper DateTime format
             const analysisDate = new Date(data.date);
 
-            // Step 3: Create the analysis separately (no transaction)
+            // Step 3: Create or update the analysis
             const analysis = await retryWithBackoff(async () => {
-                // Create the main analysis record first
-                const analysisRecord = await prisma.analysis.create({
-                    data: {
-                        title: data.title,
-                        date: analysisDate,
-                        duration: data.duration,
-                        participants: data.participants,
-                        summary: data.summary,
-                        overallSentiment: data.sentiment.overall,
-                        keyInsights: data.keyInsights,
-                        recommendations: data.recommendations,
-                        callAssetId: asset.id,
-                        salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
-                        questionsRate: data.questionsAnalysis.questionsPerMinute,
-                        totalQuestions: data.questionsAnalysis.totalQuestions,
-                        topicCoherence: data.topicCoherence.score
-                    },
+                // Check if analysis already exists for this asset
+                const existingAnalysis = await prisma.analysis.findUnique({
+                    where: { callAssetId: asset.id }
                 });
 
-                console.log("Created analysis record:", analysisRecord.id);
+                let analysisRecord;
+                if (existingAnalysis) {
+                    // Update existing analysis
+                    analysisRecord = await prisma.analysis.update({
+                        where: { id: existingAnalysis.id },
+                        data: {
+                            title: data.title,
+                            date: analysisDate,
+                            duration: data.duration,
+                            participants: data.participants,
+                            summary: data.summary,
+                            overallSentiment: data.sentiment.overall,
+                            keyInsights: data.keyInsights,
+                            recommendations: data.recommendations,
+                            salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
+                            questionsRate: data.questionsAnalysis.questionsPerMinute,
+                            totalQuestions: data.questionsAnalysis.totalQuestions,
+                            topicCoherence: data.topicCoherence.score
+                        },
+                    });
+
+                    // Delete existing related records
+                    await Promise.all([
+                        prisma.sentimentEntry.deleteMany({
+                            where: { analysisId: existingAnalysis.id }
+                        }),
+                        prisma.participantTalkStat.deleteMany({
+                            where: { analysisId: existingAnalysis.id }
+                        }),
+                        prisma.objection.deleteMany({
+                            where: { analysisId: existingAnalysis.id }
+                        })
+                    ]);
+                } else {
+                    // Create new analysis record
+                    analysisRecord = await prisma.analysis.create({
+                        data: {
+                            title: data.title,
+                            date: analysisDate,
+                            duration: data.duration,
+                            participants: data.participants,
+                            summary: data.summary,
+                            overallSentiment: data.sentiment.overall,
+                            keyInsights: data.keyInsights,
+                            recommendations: data.recommendations,
+                            callAssetId: asset.id,
+                            salesRepTalkRatio: data.talkRatio?.salesRepPercentage || 50,
+                            questionsRate: data.questionsAnalysis.questionsPerMinute,
+                            totalQuestions: data.questionsAnalysis.totalQuestions,
+                            topicCoherence: data.topicCoherence.score
+                        },
+                    });
+                }
+
+                console.log(`${existingAnalysis ? 'Updated' : 'Created'} analysis record:`, analysisRecord.id);
 
                 // Step 4: Create sentiment entries in batches
                 const sentimentPromises = data.sentiment.timeline.map(point =>
