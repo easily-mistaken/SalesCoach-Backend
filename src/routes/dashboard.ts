@@ -405,10 +405,159 @@ dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Pro
   }
 });
 
-// common objections - placeholder
-dashboardRouter.get('/commonObjections', async (req: Request, res: Response) => {
-  // Placeholder for future implementation
-  res.status(501).json({ message: "This endpoint is not yet implemented" });
+// Replace the existing placeholder endpoint with this implementation
+dashboardRouter.get('/commonObjections', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // @ts-ignore
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+    
+    // Validate orgId
+    const validation = validateQuery(orgIdSchema, req);
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+    
+    const { orgId } = validation.data!;
+    
+    const userRole = await getUserOrgRole(userId, orgId);
+    
+    if (!userRole) {
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
+    }
+
+    // Build the where clause based on user role
+    let whereClause = {};
+    if (canAccessAllOrgData(userRole as Role)) {
+      // For admin/manager/coach - get objections for all call assets in the org
+      whereClause = {
+        analysis: {
+          callAsset: {
+            organizationId: orgId
+          }
+        }
+      };
+    } else {
+      // For sales rep - only get objections for their own call assets in the org
+      whereClause = {
+        analysis: {
+          callAsset: {
+            userId,
+            organizationId: orgId
+          }
+        }
+      };
+    }
+
+    // Get objection counts by type, sorted by count in descending order
+    const objectionCounts = await prisma.objection.groupBy({
+      by: ['type'],
+      where: whereClause,
+      _count: {
+        id: true
+      },
+      orderBy: {
+        _count: {
+          id: 'desc'
+        }
+      },
+      take: 5 // Limit to top 5 objection categories
+    });
+
+    // Prepare the response data in the format expected by the component
+    const objectionTypeMappings = {
+      'PRICE': {
+        type: "Price",
+        icon: "DollarSign",
+        color: "bg-red-100 text-red-600",
+        link: "/objections/price",
+        example: "Your product is too expensive compared to competitors."
+      },
+      'TIMING': {
+        type: "Timing",
+        icon: "Clock",
+        color: "bg-orange-100 text-orange-600",
+        link: "/objections/timing",
+        example: "We're not ready to make a decision right now."
+      },
+      'TRUST_RISK': {
+        type: "Trust/Risk",
+        icon: "ShieldCheck",
+        color: "bg-blue-100 text-blue-600",
+        link: "/objections/trust",
+        example: "We're concerned about the implementation process."
+      },
+      'COMPETITION': {
+        type: "Competition",
+        icon: "Briefcase",
+        color: "bg-purple-100 text-purple-600",
+        link: "/objections/competition",
+        example: "We're already using another solution."
+      },
+      'STAKEHOLDERS': {
+        type: "Stakeholders",
+        icon: "Users",
+        color: "bg-green-100 text-green-600",
+        link: "/objections/stakeholders",
+        example: "I need to get approval from my team first."
+      },
+      'TECHNICAL': {
+        type: "Technical",
+        icon: "Terminal",
+        color: "bg-cyan-100 text-cyan-600",
+        link: "/objections/technical",
+        example: "Your solution may not integrate with our current tech stack."
+      },
+      'IMPLEMENTATION': {
+        type: "Implementation",
+        icon: "Settings",
+        color: "bg-indigo-100 text-indigo-600", 
+        link: "/objections/implementation",
+        example: "The implementation process seems too complex."
+      },
+      'VALUE': {
+        type: "Value",
+        icon: "TrendingUp",
+        color: "bg-emerald-100 text-emerald-600",
+        link: "/objections/value",
+        example: "We don't see enough value to justify the investment."
+      },
+      'OTHERS': {
+        type: "Other",
+        icon: "HelpCircle",
+        color: "bg-gray-100 text-gray-600",
+        link: "/objections/others",
+        example: "We have other concerns not covered by standard categories."
+      }
+    };
+
+    // Format the response
+    const formattedResponse = objectionCounts.map((item, index) => {
+      const typeKey = item.type as keyof typeof objectionTypeMappings;
+      const mapping = objectionTypeMappings[typeKey];
+      
+      return {
+        id: index + 1,
+        type: mapping.type,
+        count: item._count.id,
+        example: mapping.example,
+        icon: mapping.icon,
+        color: mapping.color,
+        link: mapping.link
+      };
+    });
+
+    res.status(200).json(formattedResponse);
+  } catch (error) {
+    console.error('Error fetching common objections:', error);
+    res.status(500).json({ error: 'Failed to fetch common objections' });
+  }
 });
 
 // transcripts - paginated with role-based logic
