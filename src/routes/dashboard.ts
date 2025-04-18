@@ -761,7 +761,7 @@ dashboardRouter.get('/topicCoherence', async (req: Request, res: Response): Prom
   }
 });
 
-/// NEW ENDPOINT: objection categories trends over time
+// Updated objection categories trends endpoint
 dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
@@ -796,149 +796,225 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
       return;
     }
 
-    // Define the date range for the query
-    let dateFilter = {};
-    if (startDate && endDate) {
-      dateFilter = {
-        date: {
-          gte: new Date(startDate),
-          lte: new Date(endDate),
-        }
-      };
-    } else if (startDate) {
-      dateFilter = {
-        date: {
-          gte: new Date(startDate),
-        }
-      };
-    } else if (endDate) {
-      dateFilter = {
-        date: {
-          lte: new Date(endDate),
-        }
-      };
-    } else {
-      // Default to last 3 months if no date range specified
-      const threeMonthsAgo = new Date();
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      
-      dateFilter = {
-        date: {
-          gte: threeMonthsAgo,
-        }
-      };
+    // Default to last 3 months if no date range specified
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    
+    const startDateTime = startDate ? new Date(startDate) : threeMonthsAgo;
+    const endDateTime = endDate ? new Date(endDate) : new Date();
+    
+    // Ensure end date includes the entire day
+    if (endDate) {
+      endDateTime.setHours(23, 59, 59, 999);
     }
 
-    // Build the where clause based on user role
-    let whereClause = {
-      ...dateFilter
-    };
+    // Debug log the date range
+    console.log(`Fetching objections from ${startDateTime.toISOString()} to ${endDateTime.toISOString()}`);
+
+    // Build the org filter based on user role
+    let orgFilter = {};
     
     if (canAccessAllOrgData(userRole as Role)) {
       // For admin/manager/coach - get data for all call assets in the org
-      whereClause = {
-        ...whereClause,
-        callAsset: {
-          organizationId: orgId
-        }
+      orgFilter = {
+        organizationId: orgId
       };
     } else {
       // For sales rep - only get data for their own call assets in the org
-      whereClause = {
-        ...whereClause,
-        callAsset: {
-          userId,
-          organizationId: orgId
-        }
+      orgFilter = {
+        userId,
+        organizationId: orgId
       };
     }
 
-    // Step 1: Get all analyses with their dates within the range
-    const analyses = await prisma.analysis.findMany({
-      where: whereClause,
-      select: {
-        id: true,
-        date: true
-      },
-      orderBy: {
-        date: 'asc'
+    // First, get all analyses within the date range from this organization
+    const callAssets = await prisma.callAsset.findMany({
+      where: orgFilter,
+      include: {
+        analysis: {
+          where: {
+            date: {
+              gte: startDateTime,
+              lte: endDateTime
+            }
+          },
+          include: {
+            objections: true
+          }
+        }
       }
     });
     
-    // If no data found, return empty result
+    // Extract all analyses that have objections
+    const analyses = callAssets
+      .filter(asset => asset.analysis)
+      .map(asset => asset.analysis);
+    
+    console.log(`Found ${analyses.length} analyses with objections`);
+    
     if (analyses.length === 0) {
       res.json([]);
-      return;
     }
 
-    // Step 2: Aggregate objections by type for each date
-    // We'll use a more sophisticated approach by using Prisma groupBy to get counts by date and type
+    // Map objection types to chart categories
+    const typeMapping: Record<string, string> = {
+      PRICE: 'price',
+      TIMING: 'timing',
+      TRUST_RISK: 'trust',
+      COMPETITION: 'competition',
+      STAKEHOLDERS: 'stakeholders',
+      TECHNICAL: 'other',
+      IMPLEMENTATION: 'other',
+      VALUE: 'other',
+      OTHERS: 'other'
+    };
     
-    // Get all distinct dates from analyses
-    const uniqueDates = [...new Set(analyses.map(a => a.date.toISOString().split('T')[0]))];
+    // Group objections by date
+    const objectionsByDate: Record<string, Record<string, number>> = {};
     
-    // Get all objections grouped by analysis ID
-    const objectionsByAnalysis = await prisma.objection.groupBy({
-      by: ['analysisId', 'type'],
-      where: {
-        analysisId: {
-          in: analyses.map(a => a.id)
-        }
-      },
-      _count: {
-        id: true
-      }
-    });
-    
-    // Create a mapping of analysis ID to date
-    const analysisIdToDate = analyses.reduce((acc, analysis) => {
-      acc[analysis.id] = analysis.date.toISOString().split('T')[0];
-      return acc;
-    }, {} as Record<string, string>);
-    
-    // Initialize the result structure with all dates and zero counts
-    const dateResults: Record<string, Record<string, number>> = {};
-    
-    // Initialize all dates with zero counts for all objection types
-    uniqueDates.forEach(date => {
-      dateResults[date] = {
-        PRICE: 0,
-        TIMING: 0,
-        TRUST_RISK: 0,
-        COMPETITION: 0,
-        STAKEHOLDERS: 0,
-        OTHERS: 0
+    // Initialize daily counts for all dates in the range
+    const dateRange: Date[] = [];
+    const currentDate = new Date(startDateTime);
+    while (currentDate <= endDateTime) {
+      const dateString = currentDate.toISOString().split('T')[0];
+      objectionsByDate[dateString] = {
+        price: 0,
+        timing: 0,
+        trust: 0,
+        competition: 0,
+        stakeholders: 0,
+        other: 0
       };
-    });
+      dateRange.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
     
-    // Fill in the actual counts from the grouped objections
-    objectionsByAnalysis.forEach(obj => {
-      const date = analysisIdToDate[obj.analysisId];
-      if (date && dateResults[date]) {
-        dateResults[date][obj.type] += obj._count.id;
+    // Count objections by date and type
+    analyses.forEach(analysis => {
+      if (!analysis) return;
+      
+      const dateString = new Date(analysis.date).toISOString().split('T')[0];
+      
+      if (!objectionsByDate[dateString]) {
+        // This shouldn't happen given our date initialization, but just in case
+        objectionsByDate[dateString] = {
+          price: 0,
+          timing: 0,
+          trust: 0,
+          competition: 0,
+          stakeholders: 0,
+          other: 0
+        };
+      }
+      
+      // Count objections by type for this date
+      if (analysis.objections && analysis.objections.length > 0) {
+        analysis.objections.forEach(objection => {
+          const category = typeMapping[objection.type] || 'other';
+          objectionsByDate[dateString][category]++;
+        });
       }
     });
     
-    // Convert to the expected array format
-    const result = Object.entries(dateResults).map(([date, counts]) => ({
+    // Convert to array format expected by frontend
+    const result = Object.entries(objectionsByDate).map(([date, counts]) => ({
       date,
-      price: counts.PRICE,
-      timing: counts.TIMING,
-      trust: counts.TRUST_RISK,
-      competition: counts.COMPETITION,
-      stakeholders: counts.STAKEHOLDERS,
-      other: counts.OTHERS
+      ...counts
     }));
     
     // Sort by date
     result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    // Return the formatted data
-    res.json(result);
+    
+    // Consolidate dates to avoid too many data points
+    let finalResult = result;
+    if (result.length > 30) {
+      // Group by week or month depending on the date range
+      const dateRangeInDays = Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (dateRangeInDays > 90) { // If more than 3 months, group by month
+        finalResult = groupDataByMonth(result);
+      } else if (dateRangeInDays > 30) { // If more than a month, group by week
+        finalResult = groupDataByWeek(result);
+      }
+    }
+    
+    console.log(`Returning ${finalResult.length} data points for objection trend`);
+    
+    // Return the result
+    res.json(finalResult);
   } catch (error) {
     console.error('Error fetching objection categories trend:', error);
     res.status(500).json({ error: 'Failed to fetch objection categories trend' });
   }
 });
+
+// Helper function to group data by week
+function groupDataByWeek(data: any[]): any[] {
+  const weekMap: Record<string, any> = {};
+  
+  data.forEach(dayData => {
+    const date = new Date(dayData.date);
+    // Get the week start date (Sunday)
+    const weekStart = new Date(date);
+    weekStart.setDate(date.getDate() - date.getDay());
+    const weekKey = weekStart.toISOString().split('T')[0];
+    
+    if (!weekMap[weekKey]) {
+      weekMap[weekKey] = {
+        date: weekKey,
+        price: 0,
+        timing: 0,
+        trust: 0,
+        competition: 0,
+        stakeholders: 0,
+        other: 0
+      };
+    }
+    
+    weekMap[weekKey].price += dayData.price;
+    weekMap[weekKey].timing += dayData.timing;
+    weekMap[weekKey].trust += dayData.trust;
+    weekMap[weekKey].competition += dayData.competition;
+    weekMap[weekKey].stakeholders += dayData.stakeholders;
+    weekMap[weekKey].other += dayData.other;
+  });
+  
+  return Object.values(weekMap).sort((a: any, b: any) => 
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+}
+
+// Helper function to group data by month
+function groupDataByMonth(data: any[]): any[] {
+  const monthMap: Record<string, any> = {};
+  
+  data.forEach(dayData => {
+    const date = new Date(dayData.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+    
+    if (!monthMap[monthKey]) {
+      monthMap[monthKey] = {
+        date: monthKey,
+        price: 0,
+        timing: 0,
+        trust: 0,
+        competition: 0,
+        stakeholders: 0,
+        other: 0
+      };
+    }
+    
+    monthMap[monthKey].price += dayData.price;
+    monthMap[monthKey].timing += dayData.timing;
+    monthMap[monthKey].trust += dayData.trust;
+    monthMap[monthKey].competition += dayData.competition;
+    monthMap[monthKey].stakeholders += dayData.stakeholders;
+    monthMap[monthKey].other += dayData.other;
+  });
+  
+  return Object.values(monthMap).sort((a: any, b: any) => 
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+}
 
 export default dashboardRouter;
