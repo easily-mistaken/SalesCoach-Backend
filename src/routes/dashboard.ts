@@ -405,7 +405,7 @@ dashboardRouter.get('/sentimentTrends', async (req: Request, res: Response): Pro
   }
 });
 
-// Replace the existing placeholder endpoint with this implementation
+// Replace the existing endpoint implementation
 dashboardRouter.get('/commonObjections', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
@@ -466,95 +466,47 @@ dashboardRouter.get('/commonObjections', async (req: Request, res: Response): Pr
         _count: {
           id: 'desc'
         }
-      },
-      take: 5 // Limit to top 5 objection categories
+      }
     });
 
-    // Mapping of DB enum values to display values
-    const objectionTypeMappings = {
-      'PRICE': {
-        type: "Price",
-        icon: "DollarSign",
-        color: "bg-red-100 text-red-600",
-        link: "/objections/price",
-        example: "Your product is too expensive compared to competitors."
+    // Get the top objections text examples
+    const topObjections = await prisma.objection.findMany({
+      where: whereClause,
+      select: {
+        text: true,
+        type: true
       },
-      'TIMING': {
-        type: "Timing",
-        icon: "Clock",
-        color: "bg-orange-100 text-orange-600",
-        link: "/objections/timing",
-        example: "We're not ready to make a decision right now."
-      },
-      'TRUST_RISK': {
-        type: "Trust/Risk",
-        icon: "ShieldCheck",
-        color: "bg-blue-100 text-blue-600",
-        link: "/objections/trust",
-        example: "We're concerned about the implementation process."
-      },
-      'COMPETITION': {
-        type: "Competition",
-        icon: "Briefcase",
-        color: "bg-purple-100 text-purple-600",
-        link: "/objections/competition",
-        example: "We're already using another solution."
-      },
-      'STAKEHOLDERS': {
-        type: "Stakeholders",
-        icon: "Users",
-        color: "bg-green-100 text-green-600",
-        link: "/objections/stakeholders",
-        example: "I need to get approval from my team first."
-      },
-      'TECHNICAL': {
-        type: "Technical",
-        icon: "Terminal",
-        color: "bg-cyan-100 text-cyan-600",
-        link: "/objections/technical",
-        example: "Your solution may not integrate with our current tech stack."
-      },
-      'IMPLEMENTATION': {
-        type: "Implementation",
-        icon: "Settings",
-        color: "bg-indigo-100 text-indigo-600", 
-        link: "/objections/implementation",
-        example: "The implementation process seems too complex."
-      },
-      'VALUE': {
-        type: "Value",
-        icon: "TrendingUp",
-        color: "bg-emerald-100 text-emerald-600",
-        link: "/objections/value",
-        example: "We don't see enough value to justify the investment."
-      },
-      'OTHERS': {
-        type: "Other",
-        icon: "HelpCircle",
-        color: "bg-gray-100 text-gray-600",
-        link: "/objections/others",
-        example: "We have other concerns not covered by standard categories."
-      }
+      distinct: ['text'],
+      take: 5
+    });
+
+    // Format the response to match the expected structure in the frontend
+    const typeCounts: Record<string, number> = {
+      PRICE: 0,
+      TIMING: 0,
+      TRUST_RISK: 0,
+      COMPETITION: 0,
+      STAKEHOLDERS: 0,
+      OTHERS: 0
     };
 
-    // Format the response as an array of CategoryObjection objects
-    // This matches what the component expects
-    const categoryObjections = objectionCounts.map((item, index) => {
-      const typeKey = item.type as keyof typeof objectionTypeMappings;
-      const mapping = objectionTypeMappings[typeKey];
-      
-      return {
-        id: index + 1,
-        type: mapping.type,
-        count: item._count.id,
-        example: mapping.example,
-        icon: mapping.icon,
-        color: mapping.color,
-        link: mapping.link
-      };
+    // Fill in the counts from DB
+    objectionCounts.forEach(item => {
+      typeCounts[item.type] = item._count.id;
     });
 
-    res.status(200).json(categoryObjections);
+    // Format top objections
+    const formattedTopObjections = topObjections.map(obj => ({
+      text: obj.text,
+      count: 1, // We just want examples, not exact counts
+      type: obj.type
+    }));
+
+    // Return the correct format expected by the frontend
+    res.status(200).json({
+      types: typeCounts,
+      topObjections: formattedTopObjections
+    });
   } catch (error) {
     console.error('Error fetching common objections:', error);
     res.status(500).json({ error: 'Failed to fetch common objections' });
