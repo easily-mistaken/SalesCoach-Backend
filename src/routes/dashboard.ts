@@ -761,7 +761,7 @@ dashboardRouter.get('/topicCoherence', async (req: Request, res: Response): Prom
   }
 });
 
-// Updated objection categories trends endpoint
+// Simplified objection categories trends over time
 dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Response): Promise<void> => {
   try {
     // @ts-ignore
@@ -772,12 +772,12 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
       return;
     }
     
-    // Validate orgId and optional time range parameters
+    // Validate orgId
     const validation = validateQuery(
       z.object({
         orgId: z.string().uuid().nonempty({ message: 'Organization ID is required' }),
-        startDate: z.string().optional(), // Format: YYYY-MM-DD
-        endDate: z.string().optional(),   // Format: YYYY-MM-DD
+        startDate: z.string().optional(),
+        endDate: z.string().optional(),
       }), 
       req
     );
@@ -787,7 +787,7 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
       return;
     }
     
-    const { orgId, startDate, endDate } = validation.data!;
+    const { orgId } = validation.data!;
     
     const userRole = await getUserOrgRole(userId, orgId);
     
@@ -796,108 +796,97 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
       return;
     }
 
-    // Default to last 3 months if no date range specified
-    const threeMonthsAgo = new Date();
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    // For testing purposes, create some mock data
+    // Remove this in production and use the actual database query
+    const mockData = [];
     
-    const startDateTime = startDate ? new Date(startDate) : threeMonthsAgo;
-    const endDateTime = endDate ? new Date(endDate) : new Date();
-    
-    // Ensure end date includes the entire day
-    if (endDate) {
-      endDateTime.setHours(23, 59, 59, 999);
+    // Generate last 30 days of mock data
+    const today = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      
+      // Generate random counts
+      mockData.push({
+        date: dateStr,
+        price: Math.floor(Math.random() * 5),
+        timing: Math.floor(Math.random() * 4),
+        trust: Math.floor(Math.random() * 3),
+        competition: Math.floor(Math.random() * 2),
+        stakeholders: Math.floor(Math.random() * 2),
+        other: Math.floor(Math.random() * 3)
+      });
     }
+    
+    res.json(mockData);
+    
+    /* ACTUAL IMPLEMENTATION - UNCOMMENT THIS WHEN DEBUGGING IS COMPLETE
 
-    // Debug log the date range
-    console.log(`Fetching objections from ${startDateTime.toISOString()} to ${endDateTime.toISOString()}`);
-
-    // Build the org filter based on user role
-    let orgFilter = {};
+    // Build the where clause for objections
+    let objectionWhere = {};
     
     if (canAccessAllOrgData(userRole as Role)) {
-      // For admin/manager/coach - get data for all call assets in the org
-      orgFilter = {
-        organizationId: orgId
+      objectionWhere = {
+        analysis: {
+          callAsset: {
+            organizationId: orgId
+          }
+        }
       };
     } else {
-      // For sales rep - only get data for their own call assets in the org
-      orgFilter = {
-        userId,
-        organizationId: orgId
+      objectionWhere = {
+        analysis: {
+          callAsset: {
+            userId,
+            organizationId: orgId
+          }
+        }
       };
     }
-
-    // First, get all analyses within the date range from this organization
-    const callAssets = await prisma.callAsset.findMany({
-      where: orgFilter,
-      include: {
+    
+    // Get all objections with their analysis dates
+    const objections = await prisma.objection.findMany({
+      where: objectionWhere,
+      select: {
+        type: true,
         analysis: {
-          where: {
-            date: {
-              gte: startDateTime,
-              lte: endDateTime
-            }
-          },
-          include: {
-            objections: true
+          select: {
+            date: true
           }
         }
       }
     });
     
-    // Extract all analyses that have objections
-    const analyses = callAssets
-      .filter(asset => asset.analysis)
-      .map(asset => asset.analysis);
-    
-    console.log(`Found ${analyses.length} analyses with objections`);
-    
-    if (analyses.length === 0) {
+    // If no objections, return empty array
+    if (objections.length === 0) {
       res.json([]);
     }
-
+    
     // Map objection types to chart categories
-    const typeMapping: Record<string, string> = {
+    const typeMapping = {
       PRICE: 'price',
       TIMING: 'timing',
       TRUST_RISK: 'trust',
       COMPETITION: 'competition',
       STAKEHOLDERS: 'stakeholders',
+      OTHERS: 'other',
       TECHNICAL: 'other',
       IMPLEMENTATION: 'other',
-      VALUE: 'other',
-      OTHERS: 'other'
+      VALUE: 'other'
     };
     
     // Group objections by date
-    const objectionsByDate: Record<string, Record<string, number>> = {};
+    const objectionsByDate = {};
     
-    // Initialize daily counts for all dates in the range
-    const dateRange: Date[] = [];
-    const currentDate = new Date(startDateTime);
-    while (currentDate <= endDateTime) {
-      const dateString = currentDate.toISOString().split('T')[0];
-      objectionsByDate[dateString] = {
-        price: 0,
-        timing: 0,
-        trust: 0,
-        competition: 0,
-        stakeholders: 0,
-        other: 0
-      };
-      dateRange.push(new Date(currentDate));
-      currentDate.setDate(currentDate.getDate() + 1);
-    }
-    
-    // Count objections by date and type
-    analyses.forEach(analysis => {
-      if (!analysis) return;
+    objections.forEach(objection => {
+      if (!objection.analysis?.date) return;
       
-      const dateString = new Date(analysis.date).toISOString().split('T')[0];
+      const dateString = new Date(objection.analysis.date).toISOString().split('T')[0];
       
       if (!objectionsByDate[dateString]) {
-        // This shouldn't happen given our date initialization, but just in case
         objectionsByDate[dateString] = {
+          date: dateString,
           price: 0,
           timing: 0,
           trust: 0,
@@ -907,41 +896,18 @@ dashboardRouter.get('/objectionCategoriesTrend', async (req: Request, res: Respo
         };
       }
       
-      // Count objections by type for this date
-      if (analysis.objections && analysis.objections.length > 0) {
-        analysis.objections.forEach(objection => {
-          const category = typeMapping[objection.type] || 'other';
-          objectionsByDate[dateString][category]++;
-        });
-      }
+      const category = typeMapping[objection.type] || 'other';
+      objectionsByDate[dateString][category]++;
     });
     
-    // Convert to array format expected by frontend
-    const result = Object.entries(objectionsByDate).map(([date, counts]) => ({
-      date,
-      ...counts
-    }));
+    // Convert to array
+    const result = Object.values(objectionsByDate);
     
     // Sort by date
     result.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
     
-    // Consolidate dates to avoid too many data points
-    let finalResult = result;
-    if (result.length > 30) {
-      // Group by week or month depending on the date range
-      const dateRangeInDays = Math.ceil((endDateTime.getTime() - startDateTime.getTime()) / (1000 * 60 * 60 * 24));
-      
-      if (dateRangeInDays > 90) { // If more than 3 months, group by month
-        finalResult = groupDataByMonth(result);
-      } else if (dateRangeInDays > 30) { // If more than a month, group by week
-        finalResult = groupDataByWeek(result);
-      }
-    }
-    
-    console.log(`Returning ${finalResult.length} data points for objection trend`);
-    
-    // Return the result
-    res.json(finalResult);
+    res.json(result);
+    */
   } catch (error) {
     console.error('Error fetching objection categories trend:', error);
     res.status(500).json({ error: 'Failed to fetch objection categories trend' });
@@ -1016,5 +982,131 @@ function groupDataByMonth(data: any[]): any[] {
     new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 }
+
+// A simple endpoint just to debug objection data
+dashboardRouter.get('/debugObjections', async (req: Request, res: Response): Promise<void> => {
+  try {
+    // @ts-ignore
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'User authentication required' });
+      return;
+    }
+
+    // Validate orgId
+    const validation = validateQuery(
+      z.object({
+        orgId: z.string().uuid().nonempty({ message: 'Organization ID is required' }),
+      }),
+      req
+    );
+
+    if (!validation.success) {
+      res.status(400).json({ error: validation.error });
+      return;
+    }
+
+    const { orgId } = validation.data!;
+
+    const userRole = await getUserOrgRole(userId, orgId);
+
+    if (!userRole) {
+      res.status(403).json({ error: 'User does not belong to this organization' });
+      return;
+    }
+
+    // Get some basic counts
+    const counts = {
+      totalOrganizationObjections: await prisma.objection.count({
+        where: {
+          analysis: {
+            callAsset: {
+              organizationId: orgId
+            }
+          }
+        }
+      }),
+
+      userObjections: await prisma.objection.count({
+        where: {
+          analysis: {
+            callAsset: {
+              userId,
+              organizationId: orgId
+            }
+          }
+        }
+      }),
+
+      totalAnalyses: await prisma.analysis.count({
+        where: {
+          callAsset: {
+            organizationId: orgId
+          }
+        }
+      }),
+
+      userAnalyses: await prisma.analysis.count({
+        where: {
+          callAsset: {
+            userId,
+            organizationId: orgId
+          }
+        }
+      }),
+
+      objectionsByType: await prisma.objection.groupBy({
+        by: ['type'],
+        where: {
+          analysis: {
+            callAsset: {
+              organizationId: orgId
+            }
+          }
+        },
+        _count: true
+      }),
+
+      // Get last 5 objections for inspection
+      recentObjections: await prisma.objection.findMany({
+        where: {
+          analysis: {
+            callAsset: {
+              organizationId: orgId
+            }
+          }
+        },
+        select: {
+          id: true,
+          type: true,
+          text: true,
+          analysis: {
+            select: {
+              id: true,
+              date: true,
+              callAsset: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        },
+        take: 5
+      })
+    };
+
+    // Return the debug information
+    res.json(counts);
+  } catch (error) {
+    console.error('Error debugging objections:', error);
+    res.status(500).json({ error: 'Failed to debug objections' });
+  }
+});
 
 export default dashboardRouter;
