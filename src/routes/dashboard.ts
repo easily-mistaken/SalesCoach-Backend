@@ -470,7 +470,7 @@ dashboardRouter.get('/commonObjections', async (req: Request, res: Response): Pr
       take: 5 // Limit to top 5 objection categories
     });
 
-    // Prepare the response data in the format expected by the component
+    // Mapping of DB enum values to display values
     const objectionTypeMappings = {
       'PRICE': {
         type: "Price",
@@ -537,8 +537,9 @@ dashboardRouter.get('/commonObjections', async (req: Request, res: Response): Pr
       }
     };
 
-    // Format the response
-    const formattedResponse = objectionCounts.map((item, index) => {
+    // Format the response as an array of CategoryObjection objects
+    // This matches what the component expects
+    const categoryObjections = objectionCounts.map((item, index) => {
       const typeKey = item.type as keyof typeof objectionTypeMappings;
       const mapping = objectionTypeMappings[typeKey];
       
@@ -553,7 +554,7 @@ dashboardRouter.get('/commonObjections', async (req: Request, res: Response): Pr
       };
     });
 
-    res.status(200).json(formattedResponse);
+    res.status(200).json(categoryObjections);
   } catch (error) {
     console.error('Error fetching common objections:', error);
     res.status(500).json({ error: 'Failed to fetch common objections' });
